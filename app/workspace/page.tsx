@@ -1,10 +1,10 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { WorkspaceNotes } from "@/components/workspace-notes";
-import { auth } from "@/lib/auth";
+import { getAuth } from "@/lib/auth";
 
 export default async function WorkspacePage() {
-  const session = await auth.api.getSession({
+  const session = await getAuth().api.getSession({
     headers: await headers(),
   });
 

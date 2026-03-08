@@ -1,8 +1,8 @@
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { note } from "@/database/notes-schema";
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getAuth } from "@/lib/auth";
+import { getDb } from "@/lib/db";
 
 type RouteContext = {
   params: Promise<{
@@ -11,7 +11,7 @@ type RouteContext = {
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const session = await auth.api.getSession({
+  const session = await getAuth().api.getSession({
     headers: request.headers,
   });
 
@@ -38,7 +38,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     updateData.content = body.content;
   }
 
-  const [updatedNote] = await db
+  const [updatedNote] = await getDb()
     .update(note)
     .set(updateData)
     .where(and(eq(note.id, noteId), eq(note.userId, session.user.id)))
@@ -52,7 +52,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(request: Request, context: RouteContext) {
-  const session = await auth.api.getSession({
+  const session = await getAuth().api.getSession({
     headers: request.headers,
   });
 
@@ -62,7 +62,7 @@ export async function DELETE(request: Request, context: RouteContext) {
 
   const { noteId } = await context.params;
 
-  const [deletedNote] = await db
+  const [deletedNote] = await getDb()
     .delete(note)
     .where(and(eq(note.id, noteId), eq(note.userId, session.user.id)))
     .returning();

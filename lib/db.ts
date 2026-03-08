@@ -1,12 +1,21 @@
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 
-const databaseUrl = process.env.DATABASE_URL;
+let dbInstance: ReturnType<typeof drizzle> | null = null;
 
-if (!databaseUrl) {
-  throw new Error("Missing DATABASE_URL");
+export function getDb() {
+  if (dbInstance) {
+    return dbInstance;
+  }
+
+  const databaseUrl = process.env.DATABASE_URL;
+
+  if (!databaseUrl) {
+    throw new Error("Missing DATABASE_URL");
+  }
+
+  const sql = neon(databaseUrl);
+  dbInstance = drizzle({ client: sql });
+
+  return dbInstance;
 }
-
-const sql = neon(databaseUrl);
-
-export const db = drizzle({ client: sql });

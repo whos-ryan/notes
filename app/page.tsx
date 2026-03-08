@@ -1,10 +1,10 @@
 import { headers } from "next/headers";
 import Link from "next/link";
 import { LandingProfileMenu } from "@/components/landing-profile-menu";
-import { auth } from "@/lib/auth";
+import { getAuth } from "@/lib/auth";
 
 export default async function Home() {
-  const session = await auth.api.getSession({
+  const session = await getAuth().api.getSession({
     headers: await headers(),
   });
 

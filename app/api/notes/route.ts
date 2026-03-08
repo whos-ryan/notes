@@ -1,11 +1,11 @@
 import { desc, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { note } from "@/database/notes-schema";
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getAuth } from "@/lib/auth";
+import { getDb } from "@/lib/db";
 
 export async function GET(request: Request) {
-  const session = await auth.api.getSession({
+  const session = await getAuth().api.getSession({
     headers: request.headers,
   });
 
@@ -13,7 +13,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const notes = await db
+  const notes = await getDb()
     .select()
     .from(note)
     .where(eq(note.userId, session.user.id))
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const session = await auth.api.getSession({
+  const session = await getAuth().api.getSession({
     headers: request.headers,
   });
 
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
   const title = body.title?.trim() ? body.title.trim() : "Untitled";
   const content = body.content ?? "";
 
-  const [createdNote] = await db
+  const [createdNote] = await getDb()
     .insert(note)
     .values({
       id: crypto.randomUUID(),
