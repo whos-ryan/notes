@@ -17,12 +17,10 @@ export default async function WorkspacePage() {
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <div className="grid min-h-screen grid-cols-1 border border-white/10 bg-black/15 md:grid-cols-[260px_1fr]">
-        <WorkspaceNotes
-          profileLabel={profileLabel}
-          profileImage={session.user.image ?? null}
-        />
-      </div>
+      <WorkspaceNotes
+        profileLabel={profileLabel}
+        profileImage={session.user.image ?? null}
+      />
     </main>
   );
 }

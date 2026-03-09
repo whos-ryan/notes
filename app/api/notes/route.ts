@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { note } from "@/database/notes-schema";
 import { getAuth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { parseNoteMutationInput } from "@/lib/notes-contracts";
 
 export async function GET(request: Request) {
   const session = await getAuth().api.getSession({
@@ -31,10 +32,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = (await request.json()) as {
-    title?: string;
-    content?: string;
-  };
+  const body = parseNoteMutationInput(await request.json());
 
   const title = body.title?.trim() ? body.title.trim() : "Untitled";
   const content = body.content ?? "";

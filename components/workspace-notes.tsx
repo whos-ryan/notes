@@ -1,16 +1,14 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LandingProfileMenu } from "@/components/landing-profile-menu";
-
-type NoteRecord = {
-  id: string;
-  title: string;
-  content: string;
-  createdAt: string;
-  updatedAt: string;
-};
+import { WorkspaceNoteListItem } from "@/components/workspace-note-list-item";
+import type {
+  NoteRecord,
+  NoteResponse,
+  NotesListResponse,
+} from "@/lib/notes-contracts";
 
 type WorkspaceNotesProps = {
   profileLabel: string;
@@ -21,13 +19,20 @@ export function WorkspaceNotes({
   profileLabel,
   profileImage,
 }: WorkspaceNotesProps) {
+  const minSidebarWidth = 240;
+  const maxSidebarWidth = 320;
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(260);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const resizeStateRef = useRef<{
+    startX: number;
+    startWidth: number;
+  } | null>(null);
 
   const activeNote = useMemo(
     () => notes.find((item) => item.id === activeNoteId) ?? null,
@@ -61,12 +66,14 @@ export function WorkspaceNotes({
       return null;
     }
 
-    const data = (await response.json()) as { note: NoteRecord };
+    const data = (await response.json()) as NoteResponse;
     setNotes((current) => [data.note, ...current]);
     setActiveNoteId(data.note.id);
+
     if (!silent) {
       setIsCreating(false);
     }
+
     return data.note;
   }, []);
 
@@ -86,7 +93,7 @@ export function WorkspaceNotes({
         return;
       }
 
-      const data = (await response.json()) as { notes: NoteRecord[] };
+      const data = (await response.json()) as NotesListResponse;
       setNotes(data.notes);
 
       if (data.notes.length > 0) {
@@ -170,18 +177,70 @@ export function WorkspaceNotes({
     setDeletingNoteId(null);
   };
 
+  const onSidebarResizeStart = (clientX: number) => {
+    resizeStateRef.current = {
+      startX: clientX,
+      startWidth: sidebarWidth,
+    };
+  };
+
+  const onToggleSidebar = () => {
+    setIsSidebarCollapsed((current) => !current);
+  };
+
+  useEffect(() => {
+    const onMouseMove = (event: MouseEvent) => {
+      if (!resizeStateRef.current || isSidebarCollapsed) {
+        return;
+      }
+
+      const nextWidth =
+        resizeStateRef.current.startWidth +
+        (event.clientX - resizeStateRef.current.startX);
+
+      if (nextWidth < minSidebarWidth) {
+        setSidebarWidth(minSidebarWidth);
+        return;
+      }
+
+      if (nextWidth > maxSidebarWidth) {
+        setSidebarWidth(maxSidebarWidth);
+        return;
+      }
+
+      setSidebarWidth(nextWidth);
+    };
+
+    const onMouseUp = () => {
+      resizeStateRef.current = null;
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [isSidebarCollapsed]);
+
   return (
-    <>
+    <div className="flex min-h-screen w-full border border-white/10 bg-black/15">
       <aside
-        className={`flex flex-col border-r border-white/10 bg-surface/70 ${
-          isSidebarCollapsed ? "hidden md:hidden" : ""
+        style={{
+          width: isSidebarCollapsed ? 0 : sidebarWidth,
+        }}
+        className={`relative flex h-screen shrink-0 flex-col border-r border-white/10 bg-surface/70 transition-[width] duration-200 ${
+          isSidebarCollapsed ? "overflow-hidden border-r-0" : ""
         }`}
       >
         <div className="border-b border-white/10 px-4 py-3">
           <p className="text-xs uppercase tracking-[0.2em] text-muted">
             Workspace
           </p>
-          <h1 className="mt-1 font-sans text-base font-semibold">notes.os</h1>
+          <h1 className="mt-1 font-sans text-[30px] font-semibold leading-none text-foreground">
+            notes.os
+          </h1>
         </div>
 
         <div className="border-b border-white/10 p-3">
@@ -189,7 +248,7 @@ export function WorkspaceNotes({
             type="button"
             disabled={isCreating}
             onClick={() => void createNote({ silent: false })}
-            className="w-full border border-white/15 px-3 py-2 text-sm text-foreground transition enabled:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full border border-white/15 px-3 py-2 text-sm font-medium text-foreground transition enabled:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {isCreating ? "Creating..." : "New note"}
           </button>
@@ -202,41 +261,18 @@ export function WorkspaceNotes({
             <p className="text-sm text-muted">No notes yet.</p>
           ) : (
             <div className="space-y-2">
-              {notes.map((item) =>
-                (() => {
-                  const firstLine =
-                    item.content.split(/\r?\n/)[0]?.trim() || "Empty note";
-
-                  return (
-                    <div key={item.id} className="group relative">
-                      <button
-                        type="button"
-                        onClick={() => setActiveNoteId(item.id)}
-                        className={`w-full border px-3 py-2 pr-12 text-left text-sm transition ${
-                          item.id === activeNoteId
-                            ? "border-white/30 bg-white/10 text-foreground"
-                            : "border-white/10 text-muted hover:bg-white/5 hover:text-foreground"
-                        }`}
-                      >
-                        <p className="truncate font-medium">
-                          {item.title || "Untitled"}
-                        </p>
-                        <p className="truncate text-xs text-muted">
-                          {firstLine}
-                        </p>
-                      </button>
-                      <button
-                        type="button"
-                        disabled={deletingNoteId === item.id}
-                        onClick={() => void deleteNote(item.id)}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 border border-white/15 px-2 py-1 text-xs text-red-300 opacity-0 transition hover:bg-red-500/10 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-100"
-                      >
-                        {deletingNoteId === item.id ? "..." : "Del"}
-                      </button>
-                    </div>
-                  );
-                })(),
-              )}
+              {notes.map((item) => {
+                return (
+                  <WorkspaceNoteListItem
+                    key={item.id}
+                    item={item}
+                    isActive={item.id === activeNoteId}
+                    isDeleting={deletingNoteId === item.id}
+                    onSelect={setActiveNoteId}
+                    onDelete={(noteId) => void deleteNote(noteId)}
+                  />
+                );
+              })}
             </div>
           )}
         </div>
@@ -249,26 +285,36 @@ export function WorkspaceNotes({
             Back to landing
           </Link>
         </div>
-      </aside>
 
-      <section
-        className={`flex min-w-0 flex-col bg-background/90 ${
-          isSidebarCollapsed ? "md:col-span-2" : ""
-        }`}
-      >
-        <header className="flex items-center gap-2 border-b border-white/10 px-4 py-3 md:px-6">
+        {!isSidebarCollapsed ? (
           <button
             type="button"
-            onClick={() => setIsSidebarCollapsed((current) => !current)}
-            className="border border-white/15 px-2 py-1 text-xs text-muted transition hover:text-foreground"
+            onMouseDown={(event) => onSidebarResizeStart(event.clientX)}
+            className="absolute right-0 top-0 h-full w-[6px] translate-x-1/2 cursor-col-resize bg-transparent"
+            aria-label="Resize sidebar"
+          />
+        ) : null}
+      </aside>
+
+      <section className="flex min-w-0 flex-1 flex-col bg-background/90">
+        <header className="flex h-[62px] items-center gap-3 border-b border-white/10 px-6">
+          <button
+            type="button"
+            onClick={onToggleSidebar}
+            className="border border-white/15 p-2 text-muted transition hover:text-foreground"
             aria-label="Toggle sidebar"
           >
-            ☰
+            <span className="sr-only">Toggle sidebar</span>
+            <span className="flex flex-col gap-1">
+              <span className="h-px w-3 bg-current" />
+              <span className="h-px w-3 bg-current" />
+              <span className="h-px w-3 bg-current" />
+            </span>
           </button>
-          <p className="text-sm text-muted">
+          <p className="truncate whitespace-nowrap text-sm text-muted">
             Workspace / {activeNote?.title || "Untitled"}
           </p>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto">
             <LandingProfileMenu
               profileLabel={profileLabel}
               image={profileImage}
@@ -276,7 +322,7 @@ export function WorkspaceNotes({
           </div>
         </header>
 
-        <article className="w-full flex-1 px-4 py-6 md:px-6 md:py-8">
+        <article className="w-full flex-1 px-6 py-8">
           {error ? <p className="mb-4 text-sm text-red-400">{error}</p> : null}
 
           <input
@@ -287,8 +333,9 @@ export function WorkspaceNotes({
               updateActiveNote({ title: event.target.value })
             }
             disabled={!activeNote}
-            className="mb-6 w-full bg-transparent font-sans text-4xl font-semibold text-foreground outline-none placeholder:text-foreground/35 disabled:opacity-50"
+            className="mb-8 w-full bg-transparent font-sans text-6xl font-semibold leading-tight text-foreground outline-none placeholder:text-foreground/35 disabled:opacity-50"
           />
+
           <textarea
             aria-label="Note content"
             placeholder="Start typing your notes..."
@@ -297,10 +344,10 @@ export function WorkspaceNotes({
               updateActiveNote({ content: event.target.value })
             }
             disabled={!activeNote}
-            className="min-h-[62vh] w-full resize-none bg-transparent text-base leading-8 text-foreground/95 outline-none placeholder:text-muted disabled:opacity-50"
+            className="min-h-[62vh] w-full resize-none bg-transparent text-[32px] leading-[1.5] text-foreground/95 outline-none placeholder:text-muted disabled:opacity-50"
           />
         </article>
       </section>
-    </>
+    </div>
   );
 }

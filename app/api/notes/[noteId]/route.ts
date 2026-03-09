@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { note } from "@/database/notes-schema";
 import { getAuth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import {
+  type NoteMutationInput,
+  parseNoteMutationInput,
+} from "@/lib/notes-contracts";
 
 type RouteContext = {
   params: Promise<{
@@ -20,15 +24,8 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   const { noteId } = await context.params;
-  const body = (await request.json()) as {
-    title?: string;
-    content?: string;
-  };
-
-  const updateData: {
-    title?: string;
-    content?: string;
-  } = {};
+  const body = parseNoteMutationInput(await request.json());
+  const updateData: NoteMutationInput = {};
 
   if (typeof body.title === "string") {
     updateData.title = body.title.trim() || "Untitled";
