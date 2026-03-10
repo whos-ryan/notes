@@ -81,15 +81,16 @@ export function LandingProfileMenu({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="inline-flex items-center gap-2 border border-white/15 px-4 py-2 text-sm text-foreground transition hover:bg-white/10"
+        className="inline-flex size-11 items-center justify-center rounded-full border border-white/15 bg-black/25 text-sm text-foreground transition hover:bg-white/10"
+        aria-label={`${profileLabel} profile`}
       >
-        <span className="inline-flex size-6 items-center justify-center border border-white/15 bg-black/25 text-xs">
+        <span className="inline-flex size-8 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-black/25 text-xs">
           {profileImage ? (
             <Image
               src={profileImage}
               alt={profileLabel}
-              width={24}
-              height={24}
+              width={32}
+              height={32}
               className="size-full"
               unoptimized
             />
@@ -97,18 +98,17 @@ export function LandingProfileMenu({
             initials
           )}
         </span>
-        <span>{profileLabel}</span>
       </button>
 
       {isOpen ? (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
-          <div className="w-full max-w-md border border-white/15 bg-surface">
+          <div className="w-full max-w-md rounded-3xl border border-white/15 bg-surface shadow-2xl shadow-black/40">
             <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
               <h2 className="font-sans text-xl font-semibold">Profile</h2>
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="border border-white/15 px-2 py-1 text-sm text-muted hover:text-foreground"
+                className="rounded-lg border border-white/15 px-2 py-1 text-sm text-muted hover:bg-white/5 hover:text-foreground"
               >
                 Close
               </button>
@@ -116,7 +116,7 @@ export function LandingProfileMenu({
 
             <div className="space-y-4 px-5 py-5">
               <div className="flex items-center gap-4">
-                <div className="inline-flex size-16 items-center justify-center border border-white/15 bg-black/25 text-2xl">
+                <div className="inline-flex size-16 items-center justify-center rounded-2xl border border-white/15 bg-black/25 text-2xl">
                   {pendingImage ? (
                     <Image
                       src={pendingImage}
@@ -136,7 +136,7 @@ export function LandingProfileMenu({
                   <button
                     type="button"
                     onClick={onPickImage}
-                    className="border border-white/15 px-3 py-2 text-sm text-foreground hover:bg-white/10"
+                    className="rounded-xl border border-white/15 px-3 py-2 text-sm text-foreground hover:bg-white/10"
                   >
                     Edit/Add profile picture
                   </button>
@@ -159,14 +159,14 @@ export function LandingProfileMenu({
                   type="button"
                   disabled={isSaving}
                   onClick={() => void onSaveProfile()}
-                  className="border border-white/15 bg-white/10 px-3 py-2 text-sm font-medium transition enabled:hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-medium transition enabled:hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {isSaving ? "Saving..." : "Save picture"}
                 </button>
                 <button
                   type="button"
                   onClick={() => void onLogout()}
-                  className="border border-red-400/40 px-3 py-2 text-sm text-red-300 transition hover:bg-red-500/10"
+                  className="rounded-xl border border-red-400/40 px-3 py-2 text-sm text-red-300 transition hover:bg-red-500/10"
                 >
                   Log out
                 </button>

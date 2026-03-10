@@ -3,8 +3,15 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LandingProfileMenu } from "@/components/landing-profile-menu";
-import { WorkspaceNoteListItem } from "@/components/workspace-note-list-item";
+import { WorkspaceNoteTree } from "@/components/workspace-note-tree";
+import {
+  type CodeSnippetLanguage,
+  type CodeSnippetResponse,
+  codeSnippetLanguages,
+} from "@/lib/code-snippets";
 import type {
+  NoteFolderRecord,
+  NoteFolderResponse,
   NoteRecord,
   NoteResponse,
   NotesListResponse,
@@ -15,6 +22,9 @@ type WorkspaceNotesProps = {
   profileImage: string | null;
 };
 
+type TextFormat = "bold" | "italic";
+type BlockFormat = "h1" | "h2" | "p";
+
 export function WorkspaceNotes({
   profileLabel,
   profileImage,
@@ -23,12 +33,33 @@ export function WorkspaceNotes({
   const maxSidebarWidth = 320;
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [folders, setFolders] = useState<NoteFolderRecord[]>([]);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
+  const [expandedFolderIds, setExpandedFolderIds] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
+  const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
   const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeBlockFormat, setActiveBlockFormat] = useState<BlockFormat>("p");
+  const [activeTextFormats, setActiveTextFormats] = useState<TextFormat[]>([]);
+  const [isCodeSnippetBoxOpen, setIsCodeSnippetBoxOpen] = useState(false);
+  const [codeSnippetValue, setCodeSnippetValue] = useState("");
+  const [codeSnippetLanguage, setCodeSnippetLanguage] =
+    useState<CodeSnippetLanguage>("typescript");
+  const [isInsertingCodeSnippet, setIsInsertingCodeSnippet] = useState(false);
+  const [editingSnippetId, setEditingSnippetId] = useState<string | null>(null);
+  const [hoveredSnippetId, setHoveredSnippetId] = useState<string | null>(null);
+  const [hoveredSnippetPosition, setHoveredSnippetPosition] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
+  const activeFolderIdRef = useRef<string | null>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const selectionRangeRef = useRef<Range | null>(null);
   const resizeStateRef = useRef<{
     startX: number;
     startWidth: number;
@@ -39,43 +70,157 @@ export function WorkspaceNotes({
     [activeNoteId, notes],
   );
 
-  const createNote = useCallback(async (options?: { silent?: boolean }) => {
-    const silent = options?.silent ?? false;
-    if (!silent) {
-      setIsCreating(true);
-    }
-    setError(null);
+  useEffect(() => {
+    activeFolderIdRef.current = activeFolderId;
+  }, [activeFolderId]);
 
-    const response = await fetch("/api/notes", {
+  const createNote = useCallback(
+    async (options?: { folderId?: string | null; silent?: boolean }) => {
+      const silent = options?.silent ?? false;
+      const folderId = options?.folderId ?? activeFolderIdRef.current;
+      if (!silent) {
+        setIsCreating(true);
+      }
+      setError(null);
+
+      const response = await fetch("/api/notes", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          folderId,
+          title: "Untitled",
+          content: "",
+        }),
+      });
+
+      if (!response.ok) {
+        setError("Unable to create note.");
+        if (!silent) {
+          setIsCreating(false);
+        }
+        return null;
+      }
+
+      const data = (await response.json()) as NoteResponse;
+      setNotes((current) => [data.note, ...current]);
+      setActiveNoteId(data.note.id);
+      setActiveFolderId(data.note.folderId ?? null);
+
+      if (data.note.folderId) {
+        setExpandedFolderIds((current) =>
+          current.includes(data.note.folderId as string)
+            ? current
+            : [...current, data.note.folderId as string],
+        );
+      }
+
+      if (!silent) {
+        setIsCreating(false);
+      }
+
+      return data.note;
+    },
+    [],
+  );
+
+  const createFolder = useCallback(async () => {
+    setError(null);
+    setIsCreatingFolder(true);
+
+    const response = await fetch("/api/folders", {
       method: "POST",
       credentials: "include",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        title: "Untitled",
-        content: "",
+        name: `Folder ${folders.length + 1}`,
       }),
     });
 
     if (!response.ok) {
-      setError("Unable to create note.");
-      if (!silent) {
-        setIsCreating(false);
-      }
+      setError("Unable to create folder.");
+      setIsCreatingFolder(false);
       return null;
     }
 
-    const data = (await response.json()) as NoteResponse;
-    setNotes((current) => [data.note, ...current]);
-    setActiveNoteId(data.note.id);
+    const data = (await response.json()) as NoteFolderResponse;
+    setFolders((current) => [...current, data.folder]);
+    setActiveFolderId(data.folder.id);
+    setExpandedFolderIds((current) => [...current, data.folder.id]);
+    setIsCreatingFolder(false);
+    return data.folder;
+  }, [folders.length]);
 
-    if (!silent) {
-      setIsCreating(false);
-    }
+  const renameFolder = useCallback(
+    async (folderId: string, nextName: string) => {
+      setError(null);
 
-    return data.note;
-  }, []);
+      const response = await fetch(`/api/folders/${folderId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: nextName,
+        }),
+      });
+
+      if (!response.ok) {
+        setError("Unable to rename folder.");
+        return;
+      }
+
+      const data = (await response.json()) as NoteFolderResponse;
+      setFolders((current) =>
+        current.map((folder) =>
+          folder.id === folderId ? data.folder : folder,
+        ),
+      );
+    },
+    [],
+  );
+
+  const deleteFolder = useCallback(
+    async (folderId: string) => {
+      setError(null);
+      setDeletingFolderId(folderId);
+
+      const response = await fetch(`/api/folders/${folderId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        setError("Unable to delete folder.");
+        setDeletingFolderId(null);
+        return;
+      }
+
+      setFolders((current) =>
+        current.filter((folder) => folder.id !== folderId),
+      );
+      setExpandedFolderIds((current) =>
+        current.filter((expandedId) => expandedId !== folderId),
+      );
+      setNotes((current) =>
+        current.map((item) =>
+          item.folderId === folderId ? { ...item, folderId: null } : item,
+        ),
+      );
+
+      if (activeFolderId === folderId) {
+        setActiveFolderId(null);
+      }
+
+      setDeletingFolderId(null);
+    },
+    [activeFolderId],
+  );
 
   useEffect(() => {
     void (async () => {
@@ -94,10 +239,13 @@ export function WorkspaceNotes({
       }
 
       const data = (await response.json()) as NotesListResponse;
+      setFolders(data.folders);
       setNotes(data.notes);
 
       if (data.notes.length > 0) {
         setActiveNoteId(data.notes[0].id);
+        setActiveFolderId(data.notes[0].folderId ?? null);
+        setExpandedFolderIds(data.folders.map((folder) => folder.id));
       } else {
         await createNote({ silent: true });
       }
@@ -130,24 +278,37 @@ export function WorkspaceNotes({
     };
   }, [activeNote]);
 
-  const updateActiveNote = (
-    input: Partial<Pick<NoteRecord, "title" | "content">>,
-  ) => {
-    if (!activeNoteId) {
+  useEffect(() => {
+    if (!editorRef.current) {
       return;
     }
 
-    setNotes((current) =>
-      current.map((item) =>
-        item.id === activeNoteId
-          ? {
-              ...item,
-              ...input,
-            }
-          : item,
-      ),
-    );
-  };
+    const nextContent = activeNote?.content ?? "";
+
+    if (editorRef.current.innerHTML !== nextContent) {
+      editorRef.current.innerHTML = nextContent;
+    }
+  }, [activeNote?.content]);
+
+  const updateActiveNote = useCallback(
+    (input: Partial<Pick<NoteRecord, "title" | "content">>) => {
+      if (!activeNoteId) {
+        return;
+      }
+
+      setNotes((current) =>
+        current.map((item) =>
+          item.id === activeNoteId
+            ? {
+                ...item,
+                ...input,
+              }
+            : item,
+        ),
+      );
+    },
+    [activeNoteId],
+  );
 
   const deleteNote = async (noteId: string) => {
     setError(null);
@@ -168,7 +329,9 @@ export function WorkspaceNotes({
       const filtered = current.filter((item) => item.id !== noteId);
 
       if (activeNoteId === noteId) {
-        setActiveNoteId(filtered[0]?.id ?? null);
+        const nextNote = filtered[0] ?? null;
+        setActiveNoteId(nextNote?.id ?? null);
+        setActiveFolderId(nextNote?.folderId ?? null);
       }
 
       return filtered;
@@ -176,6 +339,269 @@ export function WorkspaceNotes({
 
     setDeletingNoteId(null);
   };
+
+  const refreshEditorFormats = useCallback(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const block = document.queryCommandValue("formatBlock").toLowerCase();
+
+    if (block === "h1") {
+      setActiveBlockFormat("h1");
+    } else if (block === "h2") {
+      setActiveBlockFormat("h2");
+    } else {
+      setActiveBlockFormat("p");
+    }
+
+    setActiveTextFormats([
+      ...(document.queryCommandState("bold") ? (["bold"] as const) : []),
+      ...(document.queryCommandState("italic") ? (["italic"] as const) : []),
+    ]);
+  }, []);
+
+  const saveEditorSelection = useCallback(() => {
+    const selection = window.getSelection();
+
+    if (!selection || selection.rangeCount === 0 || !editorRef.current) {
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+
+    if (!editorRef.current.contains(range.commonAncestorContainer)) {
+      return;
+    }
+
+    selectionRangeRef.current = range.cloneRange();
+  }, []);
+
+  const restoreEditorSelection = useCallback(() => {
+    const selection = window.getSelection();
+    const range = selectionRangeRef.current;
+
+    if (!selection || !range) {
+      return false;
+    }
+
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return true;
+  }, []);
+
+  const insertMarkupIntoEditor = useCallback(
+    (markup: string) => {
+      const editorElement = editorRef.current;
+
+      if (!editorElement) {
+        return false;
+      }
+
+      editorElement.focus();
+      const restoredSelection = restoreEditorSelection();
+
+      if (restoredSelection) {
+        document.execCommand("insertHTML", false, markup);
+        saveEditorSelection();
+        return true;
+      }
+
+      editorElement.innerHTML = `${editorElement.innerHTML}${markup}`;
+      return true;
+    },
+    [restoreEditorSelection, saveEditorSelection],
+  );
+
+  useEffect(() => {
+    const onSelectionChange = () => {
+      saveEditorSelection();
+      refreshEditorFormats();
+    };
+
+    document.addEventListener("selectionchange", onSelectionChange);
+
+    return () => {
+      document.removeEventListener("selectionchange", onSelectionChange);
+    };
+  }, [refreshEditorFormats, saveEditorSelection]);
+
+  const applyBlockFormat = (format: BlockFormat) => {
+    editorRef.current?.focus();
+    restoreEditorSelection();
+    document.execCommand("formatBlock", false, format);
+    saveEditorSelection();
+    refreshEditorFormats();
+    updateActiveNote({ content: editorRef.current?.innerHTML ?? "" });
+  };
+
+  const applyTextFormat = (format: TextFormat) => {
+    editorRef.current?.focus();
+    restoreEditorSelection();
+    document.execCommand(format, false);
+    saveEditorSelection();
+    refreshEditorFormats();
+    updateActiveNote({ content: editorRef.current?.innerHTML ?? "" });
+  };
+
+  const insertEditorIndent = () => {
+    editorRef.current?.focus();
+    restoreEditorSelection();
+    document.execCommand("insertHTML", false, "&nbsp;&nbsp;&nbsp;&nbsp;");
+    saveEditorSelection();
+    updateActiveNote({ content: editorRef.current?.innerHTML ?? "" });
+  };
+
+  const pastePlainTextIntoField = useCallback(
+    (
+      event: React.ClipboardEvent<HTMLTextAreaElement>,
+      onChange: (nextValue: string) => void,
+    ) => {
+      event.preventDefault();
+
+      const pastedText = event.clipboardData.getData("text/plain");
+      const target = event.currentTarget;
+      const selectionStart = target.selectionStart ?? target.value.length;
+      const selectionEnd = target.selectionEnd ?? target.value.length;
+      const nextValue =
+        target.value.slice(0, selectionStart) +
+        pastedText +
+        target.value.slice(selectionEnd);
+
+      onChange(nextValue);
+
+      requestAnimationFrame(() => {
+        const cursorPosition = selectionStart + pastedText.length;
+        target.selectionStart = cursorPosition;
+        target.selectionEnd = cursorPosition;
+      });
+    },
+    [],
+  );
+
+  const insertCodeSnippet = useCallback(async () => {
+    const code = codeSnippetValue.trimEnd();
+
+    if (!code || !activeNote) {
+      return;
+    }
+
+    setError(null);
+    setIsInsertingCodeSnippet(true);
+
+    const response = await fetch("/api/highlight", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        code,
+        language: codeSnippetLanguage,
+        snippetId: editingSnippetId,
+      }),
+    });
+
+    if (!response.ok) {
+      setError("Unable to insert code snippet.");
+      setIsInsertingCodeSnippet(false);
+      return;
+    }
+
+    const data = (await response.json()) as CodeSnippetResponse;
+
+    const editorElement = editorRef.current;
+
+    if (!editorElement) {
+      setIsInsertingCodeSnippet(false);
+      return;
+    }
+
+    if (editingSnippetId) {
+      const activeSnippet = editorElement.querySelector<HTMLElement>(
+        `[data-code-snippet-id="${editingSnippetId}"]`,
+      );
+
+      if (activeSnippet) {
+        activeSnippet.outerHTML = data.markup;
+      }
+    } else {
+      insertMarkupIntoEditor(data.markup);
+    }
+
+    saveEditorSelection();
+    updateActiveNote({ content: editorElement.innerHTML });
+    setCodeSnippetValue("");
+    setEditingSnippetId(null);
+    setIsCodeSnippetBoxOpen(false);
+    setIsInsertingCodeSnippet(false);
+  }, [
+    activeNote,
+    codeSnippetLanguage,
+    codeSnippetValue,
+    editingSnippetId,
+    insertMarkupIntoEditor,
+    saveEditorSelection,
+    updateActiveNote,
+  ]);
+
+  const deleteSnippet = useCallback(
+    (snippetId: string) => {
+      const editorElement = editorRef.current;
+
+      if (!editorElement) {
+        return;
+      }
+
+      const snippetElement = editorElement.querySelector<HTMLElement>(
+        `[data-code-snippet-id="${snippetId}"]`,
+      );
+
+      if (!snippetElement) {
+        return;
+      }
+
+      snippetElement.remove();
+      setHoveredSnippetId(null);
+      setHoveredSnippetPosition(null);
+      updateActiveNote({
+        content: editorElement.innerHTML,
+      });
+    },
+    [updateActiveNote],
+  );
+
+  const editSnippet = useCallback((snippetId: string) => {
+    const editorElement = editorRef.current;
+
+    if (!editorElement) {
+      return;
+    }
+
+    const snippetElement = editorElement.querySelector<HTMLElement>(
+      `[data-code-snippet-id="${snippetId}"]`,
+    );
+
+    if (!snippetElement) {
+      return;
+    }
+
+    const encodedValue = snippetElement.dataset.codeSnippetValue ?? "";
+    const snippetLanguage = snippetElement.dataset.codeSnippetLanguage;
+
+    if (!snippetLanguage) {
+      return;
+    }
+
+    setCodeSnippetValue(decodeURIComponent(encodedValue));
+    setCodeSnippetLanguage(snippetLanguage as CodeSnippetLanguage);
+    setEditingSnippetId(snippetId);
+    setIsCodeSnippetBoxOpen(true);
+  }, []);
+
+  const hasEditorContent = Boolean(
+    activeNote?.content.replace(/<[^>]+>/g, "").trim(),
+  );
 
   const onSidebarResizeStart = (clientX: number) => {
     resizeStateRef.current = {
@@ -186,6 +612,14 @@ export function WorkspaceNotes({
 
   const onToggleSidebar = () => {
     setIsSidebarCollapsed((current) => !current);
+  };
+
+  const onToggleFolder = (folderId: string) => {
+    setExpandedFolderIds((current) =>
+      current.includes(folderId)
+        ? current.filter((item) => item !== folderId)
+        : [...current, folderId],
+    );
   };
 
   useEffect(() => {
@@ -225,12 +659,12 @@ export function WorkspaceNotes({
   }, [isSidebarCollapsed]);
 
   return (
-    <div className="flex min-h-screen w-full border border-white/10 bg-black/15">
+    <div className="flex min-h-screen w-full bg-black/15">
       <aside
         style={{
           width: isSidebarCollapsed ? 0 : sidebarWidth,
         }}
-        className={`relative flex h-screen shrink-0 flex-col border-r border-white/10 bg-surface/70 transition-[width] duration-200 ${
+        className={`relative m-3 mr-0 flex h-[calc(100vh-24px)] shrink-0 flex-col rounded-3xl border border-white/10 bg-surface/70 transition-[width] duration-200 ${
           isSidebarCollapsed ? "overflow-hidden border-r-0" : ""
         }`}
       >
@@ -244,43 +678,64 @@ export function WorkspaceNotes({
         </div>
 
         <div className="border-b border-white/10 p-3">
-          <button
-            type="button"
-            disabled={isCreating}
-            onClick={() => void createNote({ silent: false })}
-            className="w-full border border-white/15 px-3 py-2 text-sm font-medium text-foreground transition enabled:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isCreating ? "Creating..." : "New note"}
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              disabled={isCreating}
+              onClick={() =>
+                void createNote({ folderId: activeFolderId, silent: false })
+              }
+              className="w-full rounded-xl border border-white/15 px-3 py-2 text-sm font-medium text-foreground transition enabled:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isCreating ? "Creating..." : "New note"}
+            </button>
+            <button
+              type="button"
+              disabled={isCreatingFolder}
+              onClick={() => void createFolder()}
+              className="w-full rounded-xl border border-white/15 px-3 py-2 text-sm font-medium text-muted transition enabled:hover:bg-white/10 enabled:hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isCreatingFolder ? "Creating..." : "New folder"}
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-3">
           {isLoading ? (
             <p className="text-sm text-muted">Loading notes...</p>
-          ) : notes.length === 0 ? (
+          ) : notes.length === 0 && folders.length === 0 ? (
             <p className="text-sm text-muted">No notes yet.</p>
           ) : (
-            <div className="space-y-2">
-              {notes.map((item) => {
-                return (
-                  <WorkspaceNoteListItem
-                    key={item.id}
-                    item={item}
-                    isActive={item.id === activeNoteId}
-                    isDeleting={deletingNoteId === item.id}
-                    onSelect={setActiveNoteId}
-                    onDelete={(noteId) => void deleteNote(noteId)}
-                  />
-                );
-              })}
-            </div>
+            <WorkspaceNoteTree
+              activeFolderId={activeFolderId}
+              activeNoteId={activeNoteId}
+              deletingFolderId={deletingFolderId}
+              deletingNoteId={deletingNoteId}
+              expandedFolderIds={expandedFolderIds}
+              folders={folders}
+              notes={notes}
+              onCreateNote={(folderId) =>
+                void createNote({ folderId, silent: false })
+              }
+              onDeleteFolder={(folderId) => void deleteFolder(folderId)}
+              onDeleteNote={(noteId) => void deleteNote(noteId)}
+              onRenameFolder={(folderId, nextName) =>
+                void renameFolder(folderId, nextName)
+              }
+              onSelectFolder={setActiveFolderId}
+              onSelectNote={(noteId, folderId) => {
+                setActiveNoteId(noteId);
+                setActiveFolderId(folderId);
+              }}
+              onToggleFolder={onToggleFolder}
+            />
           )}
         </div>
 
         <div className="border-t border-white/10 p-3">
           <Link
             href="/"
-            className="block w-full border border-white/10 px-3 py-2 text-center text-sm text-muted transition hover:bg-white/5 hover:text-foreground"
+            className="block w-full rounded-xl border border-white/10 px-3 py-2 text-center text-sm text-muted transition hover:bg-white/5 hover:text-foreground"
           >
             Back to landing
           </Link>
@@ -296,12 +751,12 @@ export function WorkspaceNotes({
         ) : null}
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col bg-background/90">
+      <section className="m-3 ml-0 flex min-w-0 flex-1 flex-col rounded-3xl border border-white/10 bg-background/90">
         <header className="flex h-[62px] items-center gap-3 border-b border-white/10 px-6">
           <button
             type="button"
             onClick={onToggleSidebar}
-            className="border border-white/15 p-2 text-muted transition hover:text-foreground"
+            className="rounded-xl border border-white/15 p-2 text-muted transition hover:bg-white/5 hover:text-foreground"
             aria-label="Toggle sidebar"
           >
             <span className="sr-only">Toggle sidebar</span>
@@ -322,6 +777,154 @@ export function WorkspaceNotes({
           </div>
         </header>
 
+        <div className="flex items-center gap-2 border-b border-white/10 px-6 py-3">
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => applyBlockFormat("h1")}
+            className={`rounded-lg border px-3 py-1.5 text-sm transition ${
+              activeBlockFormat === "h1"
+                ? "border-white/30 bg-white/10 text-foreground"
+                : "border-white/15 text-muted hover:bg-white/5 hover:text-foreground"
+            }`}
+          >
+            H1
+          </button>
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => applyBlockFormat("h2")}
+            className={`rounded-lg border px-3 py-1.5 text-sm transition ${
+              activeBlockFormat === "h2"
+                ? "border-white/30 bg-white/10 text-foreground"
+                : "border-white/15 text-muted hover:bg-white/5 hover:text-foreground"
+            }`}
+          >
+            H2
+          </button>
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => applyBlockFormat("p")}
+            className={`rounded-lg border px-3 py-1.5 text-sm transition ${
+              activeBlockFormat === "p"
+                ? "border-white/30 bg-white/10 text-foreground"
+                : "border-white/15 text-muted hover:bg-white/5 hover:text-foreground"
+            }`}
+          >
+            P
+          </button>
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => applyTextFormat("bold")}
+            className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition ${
+              activeTextFormats.includes("bold")
+                ? "border-white/30 bg-white/10 text-foreground"
+                : "border-white/15 text-muted hover:bg-white/5 hover:text-foreground"
+            }`}
+          >
+            B
+          </button>
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => applyTextFormat("italic")}
+            className={`rounded-lg border px-3 py-1.5 text-sm italic transition ${
+              activeTextFormats.includes("italic")
+                ? "border-white/30 bg-white/10 text-foreground"
+                : "border-white/15 text-muted hover:bg-white/5 hover:text-foreground"
+            }`}
+          >
+            I
+          </button>
+          <button
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setIsCodeSnippetBoxOpen((current) => !current)}
+            className={`rounded-lg border px-3 py-1.5 text-sm transition ${
+              isCodeSnippetBoxOpen
+                ? "border-white/30 bg-white/10 text-foreground"
+                : "border-white/15 text-muted hover:bg-white/5 hover:text-foreground"
+            }`}
+          >
+            Code
+          </button>
+        </div>
+
+        {isCodeSnippetBoxOpen ? (
+          <div className="border-b border-white/10 px-6 py-4">
+            <div className="rounded-2xl border border-dashed border-white/15 p-4">
+              <div className="mb-3 flex items-center gap-3">
+                <label
+                  htmlFor="code-snippet-language"
+                  className="text-xs uppercase tracking-[0.18em] text-muted"
+                >
+                  Language
+                </label>
+                <select
+                  id="code-snippet-language"
+                  value={codeSnippetLanguage}
+                  onChange={(event) =>
+                    setCodeSnippetLanguage(
+                      event.target.value as CodeSnippetLanguage,
+                    )
+                  }
+                  className="rounded-xl border border-white/15 bg-transparent px-3 py-2 text-sm text-foreground outline-none"
+                >
+                  {codeSnippetLanguages.map((language) => (
+                    <option
+                      key={language}
+                      value={language}
+                      className="bg-surface text-foreground"
+                    >
+                      {language}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <textarea
+                value={codeSnippetValue}
+                onChange={(event) => setCodeSnippetValue(event.target.value)}
+                onPaste={(event) =>
+                  pastePlainTextIntoField(event, setCodeSnippetValue)
+                }
+                placeholder="Paste code"
+                spellCheck={false}
+                className="min-h-44 w-full resize-y border border-dashed border-white/15 bg-transparent px-4 py-3 font-mono text-[15px] leading-7 text-foreground outline-none placeholder:text-muted"
+              />
+              <div className="mt-3 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCodeSnippetValue("");
+                    setEditingSnippetId(null);
+                    setIsCodeSnippetBoxOpen(false);
+                  }}
+                  className="rounded-xl border border-white/15 px-3 py-2 text-sm text-muted transition hover:bg-white/5 hover:text-foreground"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isInsertingCodeSnippet || !codeSnippetValue.trim()}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    void insertCodeSnippet();
+                  }}
+                  className="rounded-xl border border-white/15 px-3 py-2 text-sm text-foreground transition enabled:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isInsertingCodeSnippet
+                    ? "Adding..."
+                    : editingSnippetId
+                      ? "Save snippet"
+                      : "Insert snippet"}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         <article className="w-full flex-1 px-6 py-8">
           {error ? <p className="mb-4 text-sm text-red-400">{error}</p> : null}
 
@@ -333,19 +936,121 @@ export function WorkspaceNotes({
               updateActiveNote({ title: event.target.value })
             }
             disabled={!activeNote}
-            className="mb-8 w-full bg-transparent font-sans text-6xl font-semibold leading-tight text-foreground outline-none placeholder:text-foreground/35 disabled:opacity-50"
+            className="mb-6 w-full bg-transparent font-sans text-5xl font-semibold leading-tight text-foreground outline-none placeholder:text-foreground/35 disabled:opacity-50"
           />
 
-          <textarea
-            aria-label="Note content"
-            placeholder="Start typing your notes..."
-            value={activeNote?.content ?? ""}
-            onChange={(event) =>
-              updateActiveNote({ content: event.target.value })
-            }
-            disabled={!activeNote}
-            className="min-h-[62vh] w-full resize-none bg-transparent text-[32px] leading-[1.5] text-foreground/95 outline-none placeholder:text-muted disabled:opacity-50"
-          />
+          <section
+            className="relative min-h-[62vh]"
+            aria-label="Note editor"
+            onMouseLeave={() => {
+              setHoveredSnippetId(null);
+              setHoveredSnippetPosition(null);
+            }}
+            onMouseMove={(event) => {
+              const target = event.target;
+
+              if (!(target instanceof HTMLElement) || !editorRef.current) {
+                return;
+              }
+
+              const overlayElement = target.closest<HTMLElement>(
+                "[data-code-snippet-overlay='true']",
+              );
+
+              if (overlayElement && hoveredSnippetId) {
+                return;
+              }
+
+              const snippetElement = target.closest<HTMLElement>(
+                "[data-code-snippet='true']",
+              );
+
+              if (!snippetElement) {
+                if (hoveredSnippetId) {
+                  setHoveredSnippetId(null);
+                  setHoveredSnippetPosition(null);
+                }
+                return;
+              }
+
+              const snippetId = snippetElement.dataset.codeSnippetId;
+
+              if (!snippetId) {
+                return;
+              }
+
+              const editorBounds = editorRef.current.getBoundingClientRect();
+              const snippetBounds = snippetElement.getBoundingClientRect();
+              const nextTop = snippetBounds.top - editorBounds.top + 8;
+              const nextLeft = snippetBounds.right - editorBounds.left - 8;
+
+              if (
+                hoveredSnippetId !== snippetId ||
+                hoveredSnippetPosition?.top !== nextTop ||
+                hoveredSnippetPosition?.left !== nextLeft
+              ) {
+                setHoveredSnippetId(snippetId);
+                setHoveredSnippetPosition({
+                  top: nextTop,
+                  left: nextLeft,
+                });
+              }
+            }}
+          >
+            {hoveredSnippetId && hoveredSnippetPosition ? (
+              <div
+                data-code-snippet-overlay="true"
+                className="absolute z-20 flex items-center gap-2"
+                style={{
+                  left: hoveredSnippetPosition.left,
+                  top: hoveredSnippetPosition.top,
+                  transform: "translateX(-100%)",
+                }}
+              >
+                <button
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => editSnippet(hoveredSnippetId)}
+                  className="rounded-xl border border-white/15 bg-background/95 px-2.5 py-1 text-xs text-foreground transition hover:bg-white/10"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => deleteSnippet(hoveredSnippetId)}
+                  className="rounded-xl border border-white/15 bg-background/95 px-2.5 py-1 text-xs text-red-300 transition hover:bg-red-500/10"
+                >
+                  Del
+                </button>
+              </div>
+            ) : null}
+            {!hasEditorContent ? (
+              <p className="pointer-events-none absolute left-0 top-0 text-[22px] leading-[1.35] text-muted">
+                Start typing your notes...
+              </p>
+            ) : null}
+            <article
+              ref={editorRef}
+              contentEditable={Boolean(activeNote)}
+              suppressContentEditableWarning
+              onKeyDown={(event) => {
+                if (event.key === "Tab") {
+                  event.preventDefault();
+                  insertEditorIndent();
+                }
+              }}
+              onInput={(event) =>
+                updateActiveNote({
+                  content: event.currentTarget.innerHTML,
+                })
+              }
+              onBlur={() => {
+                refreshEditorFormats();
+              }}
+              className="min-h-[62vh] w-full bg-transparent text-[22px] leading-[1.35] text-foreground/95 outline-none disabled:opacity-50 [&_figure[data-code-snippet='true']_.shiki]:bg-transparent! [&_figure[data-code-snippet='true']_.shiki]:p-0 [&_figure[data-code-snippet='true']_code]:grid [&_figure[data-code-snippet='true']_code]:gap-0 [&_figure[data-code-snippet='true']_code]:font-mono [&_figure[data-code-snippet='true']_code]:text-[15px] [&_figure[data-code-snippet='true']_code]:leading-7 [&_figure[data-code-snippet='true']_pre]:overflow-x-auto [&_h1]:mb-3 [&_h1]:text-4xl [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:text-3xl [&_h2]:font-semibold [&_p]:mb-2 [&_strong]:font-semibold [&_em]:italic"
+            ></article>
+          </section>
         </article>
       </section>
     </div>

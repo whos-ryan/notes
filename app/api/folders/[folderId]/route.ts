@@ -1,16 +1,17 @@
 import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { note } from "@/database/notes-schema";
+import { noteFolder } from "@/database/notes-schema";
 import { getAuth } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import {
-  type NoteMutationInput,
-  parseNoteMutationInput,
+  type NoteFolderMutationInput,
+  type NoteFolderResponse,
+  parseNoteFolderMutationInput,
 } from "@/lib/notes-contracts";
 
 type RouteContext = {
   params: Promise<{
-    noteId: string;
+    folderId: string;
   }>;
 };
 
@@ -23,33 +24,27 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { noteId } = await context.params;
-  const body = parseNoteMutationInput(await request.json());
-  const updateData: NoteMutationInput = {};
+  const { folderId } = await context.params;
+  const body = parseNoteFolderMutationInput(await request.json());
+  const updateData: NoteFolderMutationInput = {};
 
-  if (typeof body.title === "string") {
-    updateData.title = body.title.trim() || "Untitled";
+  if (typeof body.name === "string") {
+    updateData.name = body.name.trim() || "New folder";
   }
 
-  if (typeof body.content === "string") {
-    updateData.content = body.content;
-  }
-
-  if (typeof body.folderId === "string" || body.folderId === null) {
-    updateData.folderId = body.folderId;
-  }
-
-  const [updatedNote] = await getDb()
-    .update(note)
+  const [folder] = await getDb()
+    .update(noteFolder)
     .set(updateData)
-    .where(and(eq(note.id, noteId), eq(note.userId, session.user.id)))
+    .where(
+      and(eq(noteFolder.id, folderId), eq(noteFolder.userId, session.user.id)),
+    )
     .returning();
 
-  if (!updatedNote) {
+  if (!folder) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ note: updatedNote });
+  return NextResponse.json<NoteFolderResponse>({ folder });
 }
 
 export async function DELETE(request: Request, context: RouteContext) {
@@ -61,14 +56,16 @@ export async function DELETE(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { noteId } = await context.params;
+  const { folderId } = await context.params;
 
-  const [deletedNote] = await getDb()
-    .delete(note)
-    .where(and(eq(note.id, noteId), eq(note.userId, session.user.id)))
+  const [folder] = await getDb()
+    .delete(noteFolder)
+    .where(
+      and(eq(noteFolder.id, folderId), eq(noteFolder.userId, session.user.id)),
+    )
     .returning();
 
-  if (!deletedNote) {
+  if (!folder) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

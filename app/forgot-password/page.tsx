@@ -12,8 +12,8 @@ export default function ForgotPasswordPage() {
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <div className="grid min-h-screen place-items-center border border-white/10 bg-black/15 p-4">
-        <section className="w-full max-w-md border border-white/10 bg-surface/65">
+      <div className="grid min-h-screen place-items-center bg-black/15 p-4">
+        <section className="w-full max-w-md rounded-3xl border border-white/10 bg-surface/65 shadow-2xl shadow-black/30">
           <header className="border-b border-white/10 px-6 py-5">
             <p className="text-xs uppercase tracking-[0.2em] text-muted">
               notes.os
@@ -60,7 +60,7 @@ export default function ForgotPasswordPage() {
                 placeholder="you@example.com"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                className="w-full border border-white/15 bg-background/70 px-3 py-2 text-foreground outline-none placeholder:text-muted focus:border-white/30"
+                className="w-full rounded-xl border border-white/15 bg-background/70 px-3 py-2 text-foreground outline-none placeholder:text-muted focus:border-white/30"
               />
             </label>
 
@@ -72,7 +72,7 @@ export default function ForgotPasswordPage() {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full border border-white/15 bg-white/10 px-3 py-2 text-sm font-medium transition enabled:hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+              className="w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-medium transition enabled:hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSubmitting ? "Please wait..." : "Send reset link"}
             </button>

@@ -21,7 +21,8 @@
     "drizzle-orm": "^0.45.1",
     "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "shiki": "^4.0.2"
   },
   "devDependencies": {
     "@better-auth/cli": "^1.4.21",

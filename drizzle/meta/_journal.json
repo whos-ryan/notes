@@ -15,6 +15,13 @@
       "when": 1772991877153,
       "tag": "0001_opposite_chamber",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773075600000,
+      "tag": "0002_lyrical_codex",
+      "breakpoints": true
     }
   ]
 }
