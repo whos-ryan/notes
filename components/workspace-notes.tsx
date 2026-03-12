@@ -766,9 +766,25 @@ export function WorkspaceNotes({
               <span className="h-px w-3 bg-current" />
             </span>
           </button>
-          <p className="truncate whitespace-nowrap text-sm text-muted">
-            Workspace / {activeNote?.title || "Untitled"}
-          </p>
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex items-center gap-1 rounded-xl border border-white/10 p-1">
+              <Link
+                href="/workspace"
+                className="rounded-lg bg-white/10 px-3 py-1.5 text-sm text-foreground"
+              >
+                Notes
+              </Link>
+              <Link
+                href="/workspace/calendar"
+                className="rounded-lg px-3 py-1.5 text-sm text-muted transition hover:bg-white/5 hover:text-foreground"
+              >
+                Calendar
+              </Link>
+            </div>
+            <p className="truncate whitespace-nowrap text-sm text-muted">
+              Workspace / {activeNote?.title || "Untitled"}
+            </p>
+          </div>
           <div className="ml-auto">
             <LandingProfileMenu
               profileLabel={profileLabel}
