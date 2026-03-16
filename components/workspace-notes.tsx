@@ -24,6 +24,7 @@ type WorkspaceNotesProps = {
 
 type TextFormat = "bold" | "italic";
 type BlockFormat = "h1" | "h2" | "p";
+type ImageResizeHandle = "nw" | "ne" | "sw" | "se";
 
 export function WorkspaceNotes({
   profileLabel,
@@ -51,15 +52,34 @@ export function WorkspaceNotes({
   const [codeSnippetLanguage, setCodeSnippetLanguage] =
     useState<CodeSnippetLanguage>("typescript");
   const [isInsertingCodeSnippet, setIsInsertingCodeSnippet] = useState(false);
+  const [isInsertingImage, setIsInsertingImage] = useState(false);
   const [editingSnippetId, setEditingSnippetId] = useState<string | null>(null);
   const [hoveredSnippetId, setHoveredSnippetId] = useState<string | null>(null);
   const [hoveredSnippetPosition, setHoveredSnippetPosition] = useState<{
     top: number;
     left: number;
   } | null>(null);
+  const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
+  const [selectedImageBounds, setSelectedImageBounds] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const activeFolderIdRef = useRef<string | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const selectionRangeRef = useRef<Range | null>(null);
+  const imageResizeStateRef = useRef<{
+    imageId: string;
+    handle: ImageResizeHandle;
+    startX: number;
+    startY: number;
+    startWidth: number;
+    startHeight: number;
+    editorWidth: number;
+    aspectRatio: number;
+  } | null>(null);
   const resizeStateRef = useRef<{
     startX: number;
     startWidth: number;
@@ -290,6 +310,17 @@ export function WorkspaceNotes({
     }
   }, [activeNote?.content]);
 
+  useEffect(() => {
+    if (!activeNote) {
+      setSelectedImageId(null);
+      setSelectedImageBounds(null);
+      return;
+    }
+
+    setSelectedImageId(null);
+    setSelectedImageBounds(null);
+  }, [activeNote]);
+
   const updateActiveNote = useCallback(
     (input: Partial<Pick<NoteRecord, "title" | "content">>) => {
       if (!activeNoteId) {
@@ -477,6 +508,306 @@ export function WorkspaceNotes({
       });
     },
     [],
+  );
+
+  const clearSelectedImage = useCallback(() => {
+    setSelectedImageId(null);
+    setSelectedImageBounds(null);
+  }, []);
+
+  const updateSelectedImageBounds = useCallback((imageId: string) => {
+    const editorElement = editorRef.current;
+
+    if (!editorElement) {
+      return false;
+    }
+
+    const imageElement = editorElement.querySelector<HTMLImageElement>(
+      `img[data-upload-image-id="${imageId}"]`,
+    );
+
+    if (!imageElement) {
+      return false;
+    }
+
+    const editorBounds = editorElement.getBoundingClientRect();
+    const imageBounds = imageElement.getBoundingClientRect();
+
+    setSelectedImageBounds({
+      top: imageBounds.top - editorBounds.top,
+      left: imageBounds.left - editorBounds.left,
+      width: imageBounds.width,
+      height: imageBounds.height,
+    });
+
+    return true;
+  }, []);
+
+  const selectEditorImage = useCallback(
+    (imageElement: HTMLImageElement) => {
+      let imageId = imageElement.dataset.uploadImageId;
+
+      if (!imageId) {
+        imageId = crypto.randomUUID();
+        imageElement.dataset.uploadImageId = imageId;
+      }
+
+      imageElement.dataset.uploadImage = "true";
+      setSelectedImageId(imageId);
+      updateSelectedImageBounds(imageId);
+    },
+    [updateSelectedImageBounds],
+  );
+
+  const startImageResize = useCallback(
+    (handle: ImageResizeHandle, event: React.MouseEvent<HTMLButtonElement>) => {
+      if (!selectedImageId) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const editorElement = editorRef.current;
+
+      if (!editorElement) {
+        return;
+      }
+
+      const imageElement = editorElement.querySelector<HTMLImageElement>(
+        `img[data-upload-image-id="${selectedImageId}"]`,
+      );
+
+      if (!imageElement) {
+        clearSelectedImage();
+        return;
+      }
+
+      const imageBounds = imageElement.getBoundingClientRect();
+      const safeHeight = imageBounds.height || 1;
+
+      imageResizeStateRef.current = {
+        imageId: selectedImageId,
+        handle,
+        startX: event.clientX,
+        startY: event.clientY,
+        startWidth: imageBounds.width,
+        startHeight: safeHeight,
+        editorWidth: editorElement.clientWidth || 1,
+        aspectRatio: imageBounds.width / safeHeight,
+      };
+    },
+    [clearSelectedImage, selectedImageId],
+  );
+
+  const deleteSelectedImage = useCallback(() => {
+    if (!selectedImageId) {
+      return;
+    }
+
+    const editorElement = editorRef.current;
+
+    if (!editorElement) {
+      return;
+    }
+
+    const imageElement = editorElement.querySelector<HTMLImageElement>(
+      `img[data-upload-image-id="${selectedImageId}"]`,
+    );
+
+    if (!imageElement) {
+      clearSelectedImage();
+      return;
+    }
+
+    const paragraphElement = imageElement.closest("p");
+    imageElement.remove();
+
+    if (
+      paragraphElement &&
+      paragraphElement.querySelector("img") === null &&
+      paragraphElement.textContent?.trim() === ""
+    ) {
+      paragraphElement.remove();
+    }
+
+    updateActiveNote({ content: editorElement.innerHTML });
+    clearSelectedImage();
+  }, [clearSelectedImage, selectedImageId, updateActiveNote]);
+
+  useEffect(() => {
+    if (!selectedImageId) {
+      return;
+    }
+
+    const syncPosition = () => {
+      const hasImage = updateSelectedImageBounds(selectedImageId);
+
+      if (!hasImage) {
+        clearSelectedImage();
+      }
+    };
+
+    syncPosition();
+    window.addEventListener("resize", syncPosition);
+
+    return () => {
+      window.removeEventListener("resize", syncPosition);
+    };
+  }, [clearSelectedImage, selectedImageId, updateSelectedImageBounds]);
+
+  useEffect(() => {
+    const onMouseMove = (event: MouseEvent) => {
+      const resizeState = imageResizeStateRef.current;
+
+      if (!resizeState) {
+        return;
+      }
+
+      const editorElement = editorRef.current;
+
+      if (!editorElement) {
+        return;
+      }
+
+      const imageElement = editorElement.querySelector<HTMLImageElement>(
+        `img[data-upload-image-id="${resizeState.imageId}"]`,
+      );
+
+      if (!imageElement) {
+        clearSelectedImage();
+        imageResizeStateRef.current = null;
+        return;
+      }
+
+      const directionX = resizeState.handle.includes("w") ? -1 : 1;
+      const pointerDeltaX = event.clientX - resizeState.startX;
+      const widthDelta = pointerDeltaX * directionX;
+      const minWidth = 120;
+      const maxWidth = resizeState.editorWidth;
+      const nextWidth = Math.max(
+        minWidth,
+        Math.min(maxWidth, resizeState.startWidth + widthDelta),
+      );
+      const nextPercent = (nextWidth / resizeState.editorWidth) * 100;
+      const clampedPercent = Math.max(10, Math.min(100, nextPercent));
+
+      imageElement.style.width = `${clampedPercent}%`;
+      imageElement.style.maxWidth = "100%";
+      imageElement.style.height = "auto";
+
+      void updateSelectedImageBounds(resizeState.imageId);
+    };
+
+    const onMouseUp = () => {
+      const resizeState = imageResizeStateRef.current;
+
+      if (!resizeState) {
+        return;
+      }
+
+      imageResizeStateRef.current = null;
+
+      const editorElement = editorRef.current;
+
+      if (!editorElement) {
+        return;
+      }
+
+      updateActiveNote({ content: editorElement.innerHTML });
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [clearSelectedImage, updateActiveNote, updateSelectedImageBounds]);
+
+  const insertImageFile = useCallback(
+    async (file: File) => {
+      if (!activeNote) {
+        return;
+      }
+
+      if (!file.type.startsWith("image/")) {
+        setError("Only image files can be uploaded.");
+        return;
+      }
+
+      if (file.size > 10 * 1024 * 1024) {
+        setError("Image must be smaller than 10MB.");
+        return;
+      }
+
+      setError(null);
+      setIsInsertingImage(true);
+
+      try {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+
+          reader.onload = () => {
+            if (typeof reader.result === "string") {
+              resolve(reader.result);
+              return;
+            }
+
+            reject(new Error("Invalid image data."));
+          };
+
+          reader.onerror = () => reject(new Error("Unable to read image."));
+          reader.readAsDataURL(file);
+        });
+
+        const imageId = crypto.randomUUID();
+        const altText =
+          file.name.replace(/[<>"'&]/g, "").trim() || "Uploaded image";
+        const inserted = insertMarkupIntoEditor(
+          `<p><img data-upload-image="true" data-upload-image-id="${imageId}" src="${dataUrl}" alt="${altText}" /></p><p><br></p>`,
+        );
+        const editorElement = editorRef.current;
+
+        if (!inserted || !editorElement) {
+          setError("Unable to insert image.");
+          return;
+        }
+
+        saveEditorSelection();
+        updateActiveNote({ content: editorElement.innerHTML });
+        setSelectedImageId(imageId);
+        requestAnimationFrame(() => {
+          void updateSelectedImageBounds(imageId);
+        });
+      } catch {
+        setError("Unable to upload image.");
+      } finally {
+        setIsInsertingImage(false);
+      }
+    },
+    [
+      activeNote,
+      insertMarkupIntoEditor,
+      saveEditorSelection,
+      updateActiveNote,
+      updateSelectedImageBounds,
+    ],
+  );
+
+  const onImageInputChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+
+      if (!file) {
+        return;
+      }
+
+      void insertImageFile(file);
+    },
+    [insertImageFile],
   );
 
   const insertCodeSnippet = useCallback(async () => {
@@ -678,7 +1009,13 @@ export function WorkspaceNotes({
         </div>
 
         <div className="border-b border-white/10 p-3">
-          <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-col gap-2">
+            <Link
+              href="/workspace/calendar"
+              className="block w-full rounded-xl border border-white/15 px-3 py-2 text-center text-sm text-muted transition hover:bg-white/10 hover:text-foreground"
+            >
+              Open calendar
+            </Link>
             <button
               type="button"
               disabled={isCreating}
@@ -766,25 +1103,9 @@ export function WorkspaceNotes({
               <span className="h-px w-3 bg-current" />
             </span>
           </button>
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex items-center gap-1 rounded-xl border border-white/10 p-1">
-              <Link
-                href="/workspace"
-                className="rounded-lg bg-white/10 px-3 py-1.5 text-sm text-foreground"
-              >
-                Notes
-              </Link>
-              <Link
-                href="/workspace/calendar"
-                className="rounded-lg px-3 py-1.5 text-sm text-muted transition hover:bg-white/5 hover:text-foreground"
-              >
-                Calendar
-              </Link>
-            </div>
-            <p className="truncate whitespace-nowrap text-sm text-muted">
-              Workspace / {activeNote?.title || "Untitled"}
-            </p>
-          </div>
+          <p className="truncate whitespace-nowrap text-sm text-muted">
+            Workspace / {activeNote?.title || "Untitled"}
+          </p>
           <div className="ml-auto">
             <LandingProfileMenu
               profileLabel={profileLabel}
@@ -866,7 +1187,23 @@ export function WorkspaceNotes({
           >
             Code
           </button>
+          <button
+            type="button"
+            disabled={!activeNote || isInsertingImage}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => imageInputRef.current?.click()}
+            className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-muted transition enabled:hover:bg-white/5 enabled:hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {isInsertingImage ? "Uploading..." : "Image"}
+          </button>
         </div>
+        <input
+          ref={imageInputRef}
+          type="file"
+          accept="image/*"
+          onChange={onImageInputChange}
+          className="hidden"
+        />
 
         {isCodeSnippetBoxOpen ? (
           <div className="border-b border-white/10 px-6 py-4">
@@ -1041,6 +1378,77 @@ export function WorkspaceNotes({
                 </button>
               </div>
             ) : null}
+            {selectedImageId && selectedImageBounds ? (
+              <>
+                <div
+                  data-image-overlay="true"
+                  className="pointer-events-none absolute z-20 rounded-md border border-white/50"
+                  style={{
+                    left: selectedImageBounds.left,
+                    top: selectedImageBounds.top,
+                    width: selectedImageBounds.width,
+                    height: selectedImageBounds.height,
+                  }}
+                />
+                <button
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={deleteSelectedImage}
+                  className="absolute z-30 rounded-lg border border-white/15 bg-background/95 px-2 py-1 text-xs text-red-300 transition hover:bg-red-500/10"
+                  style={{
+                    left: selectedImageBounds.left + selectedImageBounds.width,
+                    top: selectedImageBounds.top - 10,
+                    transform: "translate(-100%, -100%)",
+                  }}
+                >
+                  Del
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(event) => startImageResize("nw", event)}
+                  className="absolute z-30 h-3 w-3 cursor-nwse-resize rounded-full border border-white/70 bg-background"
+                  style={{
+                    left: selectedImageBounds.left,
+                    top: selectedImageBounds.top,
+                    transform: "translate(-50%, -50%)",
+                  }}
+                  aria-label="Resize image from top left"
+                />
+                <button
+                  type="button"
+                  onMouseDown={(event) => startImageResize("ne", event)}
+                  className="absolute z-30 h-3 w-3 cursor-nesw-resize rounded-full border border-white/70 bg-background"
+                  style={{
+                    left: selectedImageBounds.left + selectedImageBounds.width,
+                    top: selectedImageBounds.top,
+                    transform: "translate(50%, -50%)",
+                  }}
+                  aria-label="Resize image from top right"
+                />
+                <button
+                  type="button"
+                  onMouseDown={(event) => startImageResize("sw", event)}
+                  className="absolute z-30 h-3 w-3 cursor-nesw-resize rounded-full border border-white/70 bg-background"
+                  style={{
+                    left: selectedImageBounds.left,
+                    top: selectedImageBounds.top + selectedImageBounds.height,
+                    transform: "translate(-50%, 50%)",
+                  }}
+                  aria-label="Resize image from bottom left"
+                />
+                <button
+                  type="button"
+                  onMouseDown={(event) => startImageResize("se", event)}
+                  className="absolute z-30 h-3 w-3 cursor-nwse-resize rounded-full border border-white/70 bg-background"
+                  style={{
+                    left: selectedImageBounds.left + selectedImageBounds.width,
+                    top: selectedImageBounds.top + selectedImageBounds.height,
+                    transform: "translate(50%, 50%)",
+                  }}
+                  aria-label="Resize image from bottom right"
+                />
+              </>
+            ) : null}
             {!hasEditorContent ? (
               <p className="pointer-events-none absolute left-0 top-0 text-[22px] leading-[1.35] text-muted">
                 Start typing your notes...
@@ -1061,10 +1469,35 @@ export function WorkspaceNotes({
                   content: event.currentTarget.innerHTML,
                 })
               }
+              onClick={(event) => {
+                const imageElement =
+                  event.target instanceof HTMLImageElement
+                    ? event.target
+                    : null;
+
+                if (!imageElement) {
+                  clearSelectedImage();
+                  return;
+                }
+
+                selectEditorImage(imageElement);
+              }}
+              onPaste={(event) => {
+                const imageFile = Array.from(event.clipboardData.files).find(
+                  (file) => file.type.startsWith("image/"),
+                );
+
+                if (!imageFile) {
+                  return;
+                }
+
+                event.preventDefault();
+                void insertImageFile(imageFile);
+              }}
               onBlur={() => {
                 refreshEditorFormats();
               }}
-              className="min-h-[62vh] w-full bg-transparent text-[22px] leading-[1.35] text-foreground/95 outline-none disabled:opacity-50 [&_figure[data-code-snippet='true']_.shiki]:bg-transparent! [&_figure[data-code-snippet='true']_.shiki]:p-0 [&_figure[data-code-snippet='true']_code]:grid [&_figure[data-code-snippet='true']_code]:gap-0 [&_figure[data-code-snippet='true']_code]:font-mono [&_figure[data-code-snippet='true']_code]:text-[15px] [&_figure[data-code-snippet='true']_code]:leading-7 [&_figure[data-code-snippet='true']_pre]:overflow-x-auto [&_h1]:mb-3 [&_h1]:text-4xl [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:text-3xl [&_h2]:font-semibold [&_p]:mb-2 [&_strong]:font-semibold [&_em]:italic"
+              className="min-h-[62vh] w-full bg-transparent text-[22px] leading-[1.35] text-foreground/95 outline-none disabled:opacity-50 [&_figure[data-code-snippet='true']_.shiki]:bg-transparent! [&_figure[data-code-snippet='true']_.shiki]:p-0 [&_figure[data-code-snippet='true']_code]:grid [&_figure[data-code-snippet='true']_code]:gap-0 [&_figure[data-code-snippet='true']_code]:font-mono [&_figure[data-code-snippet='true']_code]:text-[15px] [&_figure[data-code-snippet='true']_code]:leading-7 [&_figure[data-code-snippet='true']_pre]:overflow-x-auto [&_h1]:mb-3 [&_h1]:text-4xl [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:text-3xl [&_h2]:font-semibold [&_img]:my-4 [&_img]:max-w-full [&_img]:rounded-xl [&_img]:cursor-pointer [&_p]:mb-2 [&_strong]:font-semibold [&_em]:italic"
             ></article>
           </section>
         </article>

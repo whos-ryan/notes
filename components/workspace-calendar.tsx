@@ -127,6 +127,8 @@ export function WorkspaceCalendar({
   profileLabel,
   profileImage,
 }: WorkspaceCalendarProps) {
+  const sidebarWidth = 260;
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(
     new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   );
@@ -186,7 +188,7 @@ export function WorkspaceCalendar({
     });
 
     if (!response.ok) {
-      setError("Unable to load calendar items.");
+      setError("Unable to load calendar events.");
       setIsLoadingEvents(false);
       return;
     }
@@ -347,7 +349,7 @@ export function WorkspaceCalendar({
         error?: string;
       } | null;
 
-      setError(body?.error ?? "Unable to save calendar item.");
+      setError(body?.error ?? "Unable to save calendar event.");
       setIsSavingEvent(false);
       return;
     }
@@ -390,7 +392,7 @@ export function WorkspaceCalendar({
         error?: string;
       } | null;
 
-      setError(body?.error ?? "Unable to delete calendar item.");
+      setError(body?.error ?? "Unable to delete calendar event.");
       setIsDeletingEvent(false);
       return;
     }
@@ -404,23 +406,85 @@ export function WorkspaceCalendar({
   }, [editingEventId, closeEditor]);
 
   return (
-    <div className="flex min-h-screen w-full bg-black/15 p-3">
-      <section className="flex min-w-0 flex-1 flex-col rounded-3xl border border-white/10 bg-background/90">
-        <header className="flex flex-wrap items-center gap-3 border-b border-white/10 px-6 py-4">
-          <div className="flex items-center gap-2 rounded-xl border border-white/10 p-1">
+    <div className="flex min-h-screen w-full bg-black/15">
+      <aside
+        style={{
+          width: isSidebarCollapsed ? 0 : sidebarWidth,
+        }}
+        className={`relative m-3 mr-0 flex h-[calc(100vh-24px)] shrink-0 flex-col rounded-3xl border border-white/10 bg-surface/70 transition-[width] duration-200 ${
+          isSidebarCollapsed ? "overflow-hidden border-r-0" : ""
+        }`}
+      >
+        <div className="border-b border-white/10 px-4 py-3">
+          <p className="text-xs uppercase tracking-[0.2em] text-muted">
+            Workspace
+          </p>
+          <h1 className="mt-1 font-sans text-[30px] font-semibold leading-none text-foreground">
+            notes.os
+          </h1>
+        </div>
+
+        <div className="border-b border-white/10 p-3">
+          <div className="flex flex-col gap-2">
             <Link
               href="/workspace"
-              className="rounded-lg px-3 py-1.5 text-sm text-muted transition hover:bg-white/5 hover:text-foreground"
+              className="block w-full rounded-xl border border-white/15 px-3 py-2 text-center text-sm text-muted transition hover:bg-white/10 hover:text-foreground"
             >
-              Notes
+              Open notes
             </Link>
             <Link
               href="/workspace/calendar"
-              className="rounded-lg bg-white/10 px-3 py-1.5 text-sm text-foreground"
+              className="block w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-center text-sm text-foreground"
             >
-              Calendar
+              Open calendar
             </Link>
+            <button
+              type="button"
+              onClick={() => openCreateEditor(selectedDate)}
+              className="w-full rounded-xl border border-white/15 px-3 py-2 text-sm font-medium text-muted transition hover:bg-white/10 hover:text-foreground"
+            >
+              New calendar event
+            </button>
           </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3">
+          <p className="text-xs uppercase tracking-[0.16em] text-muted">
+            Calendar
+          </p>
+          <p className="mt-2 text-sm text-muted">
+            Track meetings, deadlines, events, and reminders.
+          </p>
+        </div>
+
+        <div className="border-t border-white/10 p-3">
+          <Link
+            href="/"
+            className="block w-full rounded-xl border border-white/10 px-3 py-2 text-center text-sm text-muted transition hover:bg-white/5 hover:text-foreground"
+          >
+            Back to landing
+          </Link>
+        </div>
+      </aside>
+
+      <section className="m-3 ml-0 flex min-w-0 flex-1 flex-col rounded-3xl border border-white/10 bg-background/90">
+        <header className="flex flex-wrap items-center gap-3 border-b border-white/10 px-6 py-4">
+          <button
+            type="button"
+            onClick={() => setIsSidebarCollapsed((current) => !current)}
+            className="rounded-xl border border-white/15 p-2 text-muted transition hover:bg-white/5 hover:text-foreground"
+            aria-label="Toggle sidebar"
+          >
+            <span className="sr-only">Toggle sidebar</span>
+            <span className="flex flex-col gap-1">
+              <span className="h-px w-3 bg-current" />
+              <span className="h-px w-3 bg-current" />
+              <span className="h-px w-3 bg-current" />
+            </span>
+          </button>
+          <p className="truncate whitespace-nowrap text-sm text-muted">
+            Workspace / Calendar
+          </p>
 
           <div className="ml-auto flex items-center gap-2">
             <button
@@ -494,7 +558,7 @@ export function WorkspaceCalendar({
               onClick={() => openCreateEditor(selectedDate)}
               className="mt-4 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-foreground transition hover:bg-white/20"
             >
-              New item
+              New event
             </button>
 
             <div className="mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">

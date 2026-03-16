@@ -53,10 +53,10 @@ export function CalendarEventForm({
     <div className="space-y-4">
       <div className="space-y-1">
         <p className="text-xs uppercase tracking-[0.16em] text-muted">
-          {mode === "edit" ? "Edit item" : "New item"}
+          {mode === "edit" ? "Edit event" : "New event"}
         </p>
         <h2 className="text-xl font-semibold text-foreground">
-          {mode === "edit" ? "Update calendar item" : "Add calendar item"}
+          {mode === "edit" ? "Update calendar event" : "Add calendar event"}
         </h2>
       </div>
 
@@ -279,7 +279,7 @@ export function CalendarEventForm({
               ? "Saving..."
               : mode === "edit"
                 ? "Save changes"
-                : "Create item"}
+                : "Create event"}
           </button>
         </div>
       </div>
