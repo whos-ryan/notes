@@ -25,10 +25,6 @@ if (isPublicDeployment && secret === "change-me-in-env") {
   throw new Error("Missing secure BETTER_AUTH_SECRET for production");
 }
 
-if (isPublicDeployment && !canSendAuthEmail) {
-  throw new Error("Missing auth email configuration for production");
-}
-
 async function sendAuthEmail({
   to,
   subject,
@@ -39,7 +35,7 @@ async function sendAuthEmail({
   html: string;
 }) {
   if (!resendApiKey || !authEmailFrom) {
-    return;
+    throw new Error("Missing auth email configuration");
   }
 
   await fetch("https://api.resend.com/emails", {
@@ -97,7 +93,7 @@ function createAuth() {
       },
     },
     emailVerification: {
-      sendOnSignUp: true,
+      sendOnSignUp: canSendAuthEmail,
       sendVerificationEmail: async ({ user, url }) => {
         await sendAuthEmail({
           to: user.email,
