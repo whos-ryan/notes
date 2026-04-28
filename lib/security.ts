@@ -155,7 +155,7 @@ export function decryptField(value: string | null) {
 export function decryptRequiredField(value: string) {
   const decrypted = decryptField(value);
 
-  if (!decrypted || decrypted.startsWith(encryptedPrefix)) {
+  if (decrypted === null || decrypted.startsWith(encryptedPrefix)) {
     throw new Error("Unable to decrypt encrypted field");
   }
 
