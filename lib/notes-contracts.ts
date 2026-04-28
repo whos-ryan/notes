@@ -1,7 +1,7 @@
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import type { note, noteFolder } from "@/database/notes-schema";
 import { sanitizeNoteHtml } from "@/lib/content-safety";
-import { decryptField } from "@/lib/security";
+import { decryptRequiredField } from "@/lib/security";
 
 export type NoteRecord = InferSelectModel<typeof note>;
 export type NoteFolderRecord = InferSelectModel<typeof noteFolder>;
@@ -31,11 +31,11 @@ export type NoteFolderResponse = {
 };
 
 export function serializeNoteRecord(record: NoteRecord): NoteRecord {
-  const content = decryptField(record.content) ?? record.content;
+  const content = decryptRequiredField(record.content);
 
   return {
     ...record,
-    title: decryptField(record.title) ?? record.title,
+    title: decryptRequiredField(record.title),
     content: sanitizeNoteHtml(content),
   };
 }
@@ -45,7 +45,7 @@ export function serializeNoteFolderRecord(
 ): NoteFolderRecord {
   return {
     ...record,
-    name: decryptField(record.name) ?? record.name,
+    name: decryptRequiredField(record.name),
   };
 }
 

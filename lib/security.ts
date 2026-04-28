@@ -152,6 +152,26 @@ export function decryptField(value: string | null) {
   }
 }
 
+export function decryptRequiredField(value: string) {
+  const decrypted = decryptField(value);
+
+  if (!decrypted || decrypted.startsWith(encryptedPrefix)) {
+    throw new Error("Unable to decrypt encrypted field");
+  }
+
+  return decrypted;
+}
+
+export function decryptOptionalField(value: string | null) {
+  const decrypted = decryptField(value);
+
+  if (decrypted?.startsWith(encryptedPrefix)) {
+    throw new Error("Unable to decrypt encrypted field");
+  }
+
+  return decrypted;
+}
+
 function getEncryptionKey() {
   const rawKey = process.env.NOTES_VAULT_ENCRYPTION_KEY;
 
