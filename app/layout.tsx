@@ -1,21 +1,29 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Space_Grotesk } from "next/font/google";
+import { IBM_Plex_Mono, Inter, Lora } from "next/font/google";
 import "./globals.css";
+import { ThemeProvider } from "@/components/theme-provider";
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
-const displaySans = Space_Grotesk({
-  variable: "--font-display",
+const sans = Inter({
+  variable: "--font-sans",
   subsets: ["latin"],
 });
 
-const uiMono = IBM_Plex_Mono({
+const serif = Lora({
+  variable: "--font-serif",
+  subsets: ["latin"],
+});
+
+const mono = IBM_Plex_Mono({
   variable: "--font-mono",
   weight: ["400", "500", "600"],
   subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "Second Brain OS",
-  description: "Notion style AI workspace built with Next.js",
+  title: "Notes Vault",
+  description: "A Notion-style workspace for notes, calendar, and snippets.",
 };
 
 export default function RootLayout({
@@ -24,11 +32,21 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body
-        className={`${displaySans.variable} ${uiMono.variable} antialiased`}
+        className={`${sans.variable} ${serif.variable} ${mono.variable} antialiased`}
       >
-        {children}
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="light"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <TooltipProvider delay={200}>
+            {children}
+            <Toaster />
+          </TooltipProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

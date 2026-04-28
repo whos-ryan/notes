@@ -9,7 +9,19 @@ import {
   parseCalendarEventMutationInput,
   serializeCalendarEvent,
 } from "@/lib/calendar-contracts";
-import { getDb } from "@/lib/db";
+import {
+  calendarDescriptionMaxLength,
+  calendarLocationMaxLength,
+  calendarTitleMaxLength,
+} from "@/lib/content-safety";
+import { withUserDb } from "@/lib/db";
+import {
+  clampText,
+  encryptField,
+  getClientKey,
+  rateLimit,
+  readJsonBody,
+} from "@/lib/security";
 
 function toDate(value: string | null): Date | null {
   if (!value) {
@@ -45,6 +57,17 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Invalid date range" }, { status: 400 });
   }
 
+  if (
+    startAt &&
+    endAt &&
+    endAt.getTime() - startAt.getTime() > 400 * 24 * 60 * 60 * 1000
+  ) {
+    return NextResponse.json(
+      { error: "Date range is too large" },
+      { status: 400 },
+    );
+  }
+
   const whereParts = [eq(calendarEvent.userId, session.user.id)];
 
   if (startAt) {
@@ -58,11 +81,13 @@ export async function GET(request: Request) {
   const whereClause =
     whereParts.length > 1 ? and(...whereParts) : whereParts[0];
 
-  const events = await getDb()
-    .select()
-    .from(calendarEvent)
-    .where(whereClause)
-    .orderBy(asc(calendarEvent.startsAt), asc(calendarEvent.createdAt));
+  const events = await withUserDb(session.user.id, async (db) =>
+    db
+      .select()
+      .from(calendarEvent)
+      .where(whereClause)
+      .orderBy(asc(calendarEvent.startsAt), asc(calendarEvent.createdAt)),
+  );
 
   return NextResponse.json({
     events: events.map(serializeCalendarEvent),
@@ -78,7 +103,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = parseCalendarEventMutationInput(await request.json());
+  const limited = rateLimit({
+    key: `calendar:create:${getClientKey(request, session.user.id)}`,
+    limit: 40,
+    windowMs: 60_000,
+  });
+
+  if (limited) {
+    return limited;
+  }
+
+  const json = await readJsonBody(request);
+
+  if (json.error) {
+    return NextResponse.json({ error: json.error }, { status: 400 });
+  }
+
+  const body = parseCalendarEventMutationInput(json.value);
 
   if (!body.startsAt) {
     return NextResponse.json(
@@ -123,11 +164,13 @@ export async function POST(request: Request) {
     const nextNoteId = body.noteId.trim();
 
     if (nextNoteId) {
-      const linkedNote = await getDb()
-        .select({ id: note.id })
-        .from(note)
-        .where(and(eq(note.id, nextNoteId), eq(note.userId, session.user.id)))
-        .limit(1);
+      const linkedNote = await withUserDb(session.user.id, async (db) =>
+        db
+          .select({ id: note.id })
+          .from(note)
+          .where(and(eq(note.id, nextNoteId), eq(note.userId, session.user.id)))
+          .limit(1),
+      );
 
       if (!linkedNote[0]) {
         return NextResponse.json(
@@ -140,22 +183,32 @@ export async function POST(request: Request) {
     }
   }
 
-  const [createdEvent] = await getDb()
-    .insert(calendarEvent)
-    .values({
-      id: crypto.randomUUID(),
-      userId: session.user.id,
-      noteId,
-      title: body.title?.trim() || "Untitled",
-      description: body.description ?? "",
-      kind: body.kind ?? "event",
-      status: body.status ?? "todo",
-      startsAt,
-      endsAt,
-      allDay: body.allDay ?? false,
-      location: body.location?.trim() ? body.location.trim() : null,
-    })
-    .returning();
+  const [createdEvent] = await withUserDb(session.user.id, async (db) =>
+    db
+      .insert(calendarEvent)
+      .values({
+        id: crypto.randomUUID(),
+        userId: session.user.id,
+        noteId,
+        title: encryptField(
+          clampText(body.title?.trim() || "Untitled", calendarTitleMaxLength),
+        ),
+        description: encryptField(
+          clampText(body.description ?? "", calendarDescriptionMaxLength),
+        ),
+        kind: body.kind ?? "event",
+        status: body.status ?? "todo",
+        startsAt,
+        endsAt,
+        allDay: body.allDay ?? false,
+        location: body.location?.trim()
+          ? encryptField(
+              clampText(body.location.trim(), calendarLocationMaxLength),
+            )
+          : null,
+      })
+      .returning(),
+  );
 
   return NextResponse.json(
     { event: serializeCalendarEvent(createdEvent) },

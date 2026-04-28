@@ -56,11 +56,11 @@ export function CalendarMonthGrid({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="grid grid-cols-7 border-b border-white/10 px-3 py-2">
+      <div className="grid grid-cols-7 border-b border-border px-2 py-2 sm:px-3">
         {weekdayLabels.map((label) => (
           <p
             key={label}
-            className="px-2 text-center text-xs uppercase tracking-[0.16em] text-muted"
+            className="px-1 text-center text-xs font-medium uppercase text-muted-foreground sm:px-2"
           >
             {label}
           </p>
@@ -77,8 +77,8 @@ export function CalendarMonthGrid({
           return (
             <div
               key={dayKey}
-              className={`flex min-h-[120px] flex-col gap-1 border-b border-r border-white/10 p-2 text-left transition ${
-                isSelected ? "bg-white/10" : "hover:bg-white/5"
+              className={`flex min-h-[88px] flex-col gap-1 border-b border-r border-border p-1.5 text-left transition sm:min-h-[112px] sm:p-2 ${
+                isSelected ? "bg-accent" : "hover:bg-accent"
               }`}
             >
               <button
@@ -89,16 +89,16 @@ export function CalendarMonthGrid({
                 <span
                   className={`inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium ${
                     isToday
-                      ? "bg-accent text-black"
+                      ? "bg-primary text-primary-foreground"
                       : isCurrentMonth
                         ? "text-foreground"
-                        : "text-muted"
+                        : "text-muted-foreground"
                   }`}
                 >
                   {day.getDate()}
                 </span>
               </button>
-              <div className="space-y-1">
+              <div className="min-w-0 space-y-1">
                 {dayEvents.slice(0, 3).map((event) => (
                   <button
                     key={event.id}
@@ -118,7 +118,7 @@ export function CalendarMonthGrid({
                   </button>
                 ))}
                 {dayEvents.length > 3 ? (
-                  <p className="px-2 text-[11px] text-muted">
+                  <p className="px-2 text-[11px] text-muted-foreground">
                     +{dayEvents.length - 3} more
                   </p>
                 ) : null}

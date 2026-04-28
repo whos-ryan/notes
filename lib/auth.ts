@@ -6,6 +6,12 @@ import { getDb } from "@/lib/db";
 
 const baseURL = process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
 const secret = process.env.BETTER_AUTH_SECRET ?? "change-me-in-env";
+const isPublicAuthUrl =
+  !baseURL.includes("localhost") && !baseURL.includes("127.0.0.1");
+const isPublicDeployment =
+  process.env.VERCEL_ENV === "production" ||
+  process.env.NOTES_VAULT_REQUIRE_PROD_SECURITY === "true" ||
+  (process.env.NODE_ENV === "production" && isPublicAuthUrl);
 const trustedOriginList = (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? baseURL)
   .split(",")
   .map((origin) => origin.trim())
@@ -13,6 +19,15 @@ const trustedOriginList = (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? baseURL)
 
 const resendApiKey = process.env.RESEND_API_KEY;
 const authEmailFrom = process.env.AUTH_EMAIL_FROM;
+const canSendAuthEmail = Boolean(resendApiKey && authEmailFrom);
+
+if (isPublicDeployment && secret === "change-me-in-env") {
+  throw new Error("Missing secure BETTER_AUTH_SECRET for production");
+}
+
+if (isPublicDeployment && !canSendAuthEmail) {
+  throw new Error("Missing auth email configuration for production");
+}
 
 async function sendAuthEmail({
   to,
@@ -72,6 +87,7 @@ function createAuth() {
     },
     emailAndPassword: {
       enabled: true,
+      requireEmailVerification: canSendAuthEmail,
       sendResetPassword: async ({ user, url }) => {
         await sendAuthEmail({
           to: user.email,

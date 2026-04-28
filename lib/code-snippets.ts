@@ -46,7 +46,13 @@ export function parseCodeSnippetInput(value: unknown): CodeSnippetInput | null {
   };
 
   if (typeof input.snippetId === "string" && input.snippetId.trim()) {
-    output.snippetId = input.snippetId;
+    const snippetId = input.snippetId
+      .replace(/[^a-zA-Z0-9_-]/g, "")
+      .slice(0, 80);
+
+    if (snippetId) {
+      output.snippetId = snippetId;
+    }
   }
 
   return output;

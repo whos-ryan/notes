@@ -1,11 +1,16 @@
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 import type { note, noteFolder } from "@/database/notes-schema";
+import { sanitizeNoteHtml } from "@/lib/content-safety";
+import { decryptField } from "@/lib/security";
 
 export type NoteRecord = InferSelectModel<typeof note>;
 export type NoteFolderRecord = InferSelectModel<typeof noteFolder>;
 
 export type NoteMutationInput = Partial<
-  Pick<InferInsertModel<typeof note>, "title" | "content" | "folderId">
+  Pick<
+    InferInsertModel<typeof note>,
+    "title" | "content" | "folderId" | "icon" | "isFavorite" | "isArchived"
+  >
 >;
 
 export type NoteFolderMutationInput = Partial<
@@ -25,6 +30,25 @@ export type NoteFolderResponse = {
   folder: NoteFolderRecord;
 };
 
+export function serializeNoteRecord(record: NoteRecord): NoteRecord {
+  const content = decryptField(record.content) ?? record.content;
+
+  return {
+    ...record,
+    title: decryptField(record.title) ?? record.title,
+    content: sanitizeNoteHtml(content),
+  };
+}
+
+export function serializeNoteFolderRecord(
+  record: NoteFolderRecord,
+): NoteFolderRecord {
+  return {
+    ...record,
+    name: decryptField(record.name) ?? record.name,
+  };
+}
+
 export function parseNoteMutationInput(value: unknown): NoteMutationInput {
   if (!value || typeof value !== "object") {
     return {};
@@ -43,6 +67,18 @@ export function parseNoteMutationInput(value: unknown): NoteMutationInput {
 
   if (typeof input.folderId === "string" || input.folderId === null) {
     output.folderId = input.folderId;
+  }
+
+  if (typeof input.icon === "string" || input.icon === null) {
+    output.icon = input.icon;
+  }
+
+  if (typeof input.isFavorite === "boolean") {
+    output.isFavorite = input.isFavorite;
+  }
+
+  if (typeof input.isArchived === "boolean") {
+    output.isArchived = input.isArchived;
   }
 
   return output;

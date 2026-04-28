@@ -1,5 +1,6 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type { calendarEvent } from "@/database/calendar-schema";
+import { decryptField } from "@/lib/security";
 
 export const calendarEventKinds = [
   "meeting",
@@ -116,6 +117,9 @@ export function serializeCalendarEvent(
 ): CalendarEventDto {
   return {
     ...event,
+    title: decryptField(event.title) ?? event.title,
+    description: decryptField(event.description) ?? event.description,
+    location: decryptField(event.location),
     kind: isCalendarEventKind(event.kind) ? event.kind : "event",
     status: isCalendarEventStatus(event.status) ? event.status : "todo",
     startsAt: event.startsAt.toISOString(),

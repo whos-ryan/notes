@@ -1,14 +1,46 @@
 ﻿"use client";
 
-import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Bold,
+  Code2,
+  Heading1,
+  Heading2,
+  ImageIcon,
+  Italic,
+  Star,
+} from "lucide-react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { LandingProfileMenu } from "@/components/landing-profile-menu";
-import { WorkspaceNoteTree } from "@/components/workspace-note-tree";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Breadcrumbs } from "@/components/workspace/breadcrumbs";
+import { CommandPalette } from "@/components/workspace/command-palette";
+import {
+  EmojiPicker,
+  parseIconValue,
+  serializeIconValue,
+} from "@/components/workspace/emoji-picker";
+import { WorkspaceSidebar } from "@/components/workspace/workspace-sidebar";
 import {
   type CodeSnippetLanguage,
   type CodeSnippetResponse,
   codeSnippetLanguages,
 } from "@/lib/code-snippets";
+import {
+  escapeHtml,
+  noteContentMaxLength,
+  sanitizeNoteHtml,
+} from "@/lib/content-safety";
 import type {
   NoteFolderRecord,
   NoteFolderResponse,
@@ -30,10 +62,11 @@ export function WorkspaceNotes({
   profileLabel,
   profileImage,
 }: WorkspaceNotesProps) {
-  const minSidebarWidth = 240;
-  const maxSidebarWidth = 320;
+  const minSidebarWidth = 220;
+  const maxSidebarWidth = 400;
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [folders, setFolders] = useState<NoteFolderRecord[]>([]);
   const [notes, setNotes] = useState<NoteRecord[]>([]);
   const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
@@ -305,8 +338,10 @@ export function WorkspaceNotes({
 
     const nextContent = activeNote?.content ?? "";
 
-    if (editorRef.current.innerHTML !== nextContent) {
-      editorRef.current.innerHTML = nextContent;
+    const safeContent = sanitizeNoteHtml(nextContent);
+
+    if (editorRef.current.innerHTML !== safeContent) {
+      editorRef.current.innerHTML = safeContent;
     }
   }, [activeNote?.content]);
 
@@ -327,18 +362,70 @@ export function WorkspaceNotes({
         return;
       }
 
+      const nextInput =
+        typeof input.content === "string"
+          ? {
+              ...input,
+              content: sanitizeNoteHtml(
+                input.content.slice(0, noteContentMaxLength),
+              ),
+            }
+          : input;
+
       setNotes((current) =>
         current.map((item) =>
           item.id === activeNoteId
             ? {
                 ...item,
-                ...input,
+                ...nextInput,
               }
             : item,
         ),
       );
     },
     [activeNoteId],
+  );
+
+  const patchNote = useCallback(
+    async (
+      noteId: string,
+      input: Partial<
+        Pick<NoteRecord, "icon" | "isFavorite" | "isArchived" | "folderId">
+      >,
+    ) => {
+      setNotes((current) =>
+        current.map((item) =>
+          item.id === noteId ? { ...item, ...input } : item,
+        ),
+      );
+
+      const response = await fetch(`/api/notes/${noteId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+
+      if (!response.ok) {
+        setError("Unable to update note.");
+      }
+    },
+    [],
+  );
+
+  const toggleFavorite = useCallback(
+    (noteId: string, next: boolean) => {
+      void patchNote(noteId, { isFavorite: next });
+    },
+    [patchNote],
+  );
+
+  const setActiveNoteIcon = useCallback(
+    (icon: { type: "emoji"; value: string } | null) => {
+      if (!activeNoteId) return;
+      void patchNote(activeNoteId, { icon: serializeIconValue(icon) });
+    },
+    [activeNoteId, patchNote],
   );
 
   const deleteNote = async (noteId: string) => {
@@ -424,6 +511,7 @@ export function WorkspaceNotes({
   const insertMarkupIntoEditor = useCallback(
     (markup: string) => {
       const editorElement = editorRef.current;
+      const safeMarkup = sanitizeNoteHtml(markup);
 
       if (!editorElement) {
         return false;
@@ -433,12 +521,14 @@ export function WorkspaceNotes({
       const restoredSelection = restoreEditorSelection();
 
       if (restoredSelection) {
-        document.execCommand("insertHTML", false, markup);
+        document.execCommand("insertHTML", false, safeMarkup);
         saveEditorSelection();
         return true;
       }
 
-      editorElement.innerHTML = `${editorElement.innerHTML}${markup}`;
+      editorElement.innerHTML = sanitizeNoteHtml(
+        `${editorElement.innerHTML}${safeMarkup}`,
+      );
       return true;
     },
     [restoreEditorSelection, saveEditorSelection],
@@ -989,124 +1079,105 @@ export function WorkspaceNotes({
     };
   }, [isSidebarCollapsed]);
 
+  const activeIcon = useMemo(
+    () => parseIconValue(activeNote?.icon ?? null),
+    [activeNote?.icon],
+  );
+
   return (
-    <div className="flex min-h-screen w-full bg-black/15">
-      <aside
-        style={{
-          width: isSidebarCollapsed ? 0 : sidebarWidth,
+    <div className="flex h-screen w-full bg-background">
+      {!isSidebarCollapsed ? (
+        <WorkspaceSidebar
+          profileLabel={profileLabel}
+          profileImage={profileImage}
+          width={sidebarWidth}
+          onCollapse={onToggleSidebar}
+          onResizeStart={(event) => onSidebarResizeStart(event.clientX)}
+          onOpenCommandPalette={() => setIsCommandOpen(true)}
+          activeNoteId={activeNoteId}
+          activeFolderId={activeFolderId}
+          expandedFolderIds={expandedFolderIds}
+          folders={folders}
+          notes={notes}
+          deletingFolderId={deletingFolderId}
+          deletingNoteId={deletingNoteId}
+          isCreating={isCreating}
+          isCreatingFolder={isCreatingFolder}
+          onCreateNote={(folderId) =>
+            void createNote({ folderId, silent: false })
+          }
+          onCreateFolder={() => void createFolder()}
+          onDeleteFolder={(folderId) => void deleteFolder(folderId)}
+          onDeleteNote={(noteId) => void deleteNote(noteId)}
+          onRenameFolder={(folderId, nextName) =>
+            void renameFolder(folderId, nextName)
+          }
+          onSelectFolder={setActiveFolderId}
+          onSelectNote={(noteId, folderId) => {
+            setActiveNoteId(noteId);
+            setActiveFolderId(folderId);
+          }}
+          onToggleFolder={onToggleFolder}
+          onToggleFavorite={toggleFavorite}
+        />
+      ) : null}
+
+      <CommandPalette
+        open={isCommandOpen}
+        onOpenChange={setIsCommandOpen}
+        notes={notes}
+        onSelectNote={(noteId, folderId) => {
+          setActiveNoteId(noteId);
+          setActiveFolderId(folderId);
         }}
-        className={`relative m-3 mr-0 flex h-[calc(100vh-24px)] shrink-0 flex-col rounded-3xl border border-white/10 bg-surface/70 transition-[width] duration-200 ${
-          isSidebarCollapsed ? "overflow-hidden border-r-0" : ""
-        }`}
-      >
-        <div className="border-b border-white/10 px-4 py-3">
-          <p className="text-xs uppercase tracking-[0.2em] text-muted">
-            Workspace
-          </p>
-          <h1 className="mt-1 font-sans text-[30px] font-semibold leading-none text-foreground">
-            notes.os
-          </h1>
-        </div>
+        onCreateNote={() => void createNote({ folderId: null, silent: false })}
+        onCreateFolder={() => void createFolder()}
+      />
 
-        <div className="border-b border-white/10 p-3">
-          <div className="flex flex-col gap-2">
-            <Link
-              href="/workspace/calendar"
-              className="block w-full rounded-xl border border-white/15 px-3 py-2 text-center text-sm text-muted transition hover:bg-white/10 hover:text-foreground"
-            >
-              Open calendar
-            </Link>
-            <button
-              type="button"
-              disabled={isCreating}
-              onClick={() =>
-                void createNote({ folderId: activeFolderId, silent: false })
-              }
-              className="w-full rounded-xl border border-white/15 px-3 py-2 text-sm font-medium text-foreground transition enabled:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isCreating ? "Creating..." : "New note"}
-            </button>
-            <button
-              type="button"
-              disabled={isCreatingFolder}
-              onClick={() => void createFolder()}
-              className="w-full rounded-xl border border-white/15 px-3 py-2 text-sm font-medium text-muted transition enabled:hover:bg-white/10 enabled:hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isCreatingFolder ? "Creating..." : "New folder"}
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-3">
-          {isLoading ? (
-            <p className="text-sm text-muted">Loading notes...</p>
-          ) : notes.length === 0 && folders.length === 0 ? (
-            <p className="text-sm text-muted">No notes yet.</p>
-          ) : (
-            <WorkspaceNoteTree
-              activeFolderId={activeFolderId}
-              activeNoteId={activeNoteId}
-              deletingFolderId={deletingFolderId}
-              deletingNoteId={deletingNoteId}
-              expandedFolderIds={expandedFolderIds}
-              folders={folders}
-              notes={notes}
-              onCreateNote={(folderId) =>
-                void createNote({ folderId, silent: false })
-              }
-              onDeleteFolder={(folderId) => void deleteFolder(folderId)}
-              onDeleteNote={(noteId) => void deleteNote(noteId)}
-              onRenameFolder={(folderId, nextName) =>
-                void renameFolder(folderId, nextName)
-              }
-              onSelectFolder={setActiveFolderId}
-              onSelectNote={(noteId, folderId) => {
-                setActiveNoteId(noteId);
-                setActiveFolderId(folderId);
-              }}
-              onToggleFolder={onToggleFolder}
-            />
-          )}
-        </div>
-
-        <div className="border-t border-white/10 p-3">
-          <Link
-            href="/"
-            className="block w-full rounded-xl border border-white/10 px-3 py-2 text-center text-sm text-muted transition hover:bg-white/5 hover:text-foreground"
-          >
-            Back to landing
-          </Link>
-        </div>
-
-        {!isSidebarCollapsed ? (
-          <button
-            type="button"
-            onMouseDown={(event) => onSidebarResizeStart(event.clientX)}
-            className="absolute right-0 top-0 h-full w-[6px] translate-x-1/2 cursor-col-resize bg-transparent"
-            aria-label="Resize sidebar"
+      <section className="flex min-w-0 flex-1 flex-col bg-background">
+        <header className="flex h-11 items-center gap-2 border-b border-border px-3">
+          {isSidebarCollapsed ? (
+            <Tooltip>
+              <TooltipTrigger
+                aria-label="Open sidebar"
+                onClick={onToggleSidebar}
+                className="grid size-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              >
+                <span className="flex flex-col gap-1">
+                  <span className="h-px w-3 bg-current" />
+                  <span className="h-px w-3 bg-current" />
+                  <span className="h-px w-3 bg-current" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Open sidebar</TooltipContent>
+            </Tooltip>
+          ) : null}
+          <Breadcrumbs
+            note={activeNote}
+            folders={folders}
+            onSelectFolder={setActiveFolderId}
           />
-        ) : null}
-      </aside>
-
-      <section className="m-3 ml-0 flex min-w-0 flex-1 flex-col rounded-3xl border border-white/10 bg-background/90">
-        <header className="flex h-[62px] items-center gap-3 border-b border-white/10 px-6">
-          <button
-            type="button"
-            onClick={onToggleSidebar}
-            className="rounded-xl border border-white/15 p-2 text-muted transition hover:bg-white/5 hover:text-foreground"
-            aria-label="Toggle sidebar"
-          >
-            <span className="sr-only">Toggle sidebar</span>
-            <span className="flex flex-col gap-1">
-              <span className="h-px w-3 bg-current" />
-              <span className="h-px w-3 bg-current" />
-              <span className="h-px w-3 bg-current" />
-            </span>
-          </button>
-          <p className="truncate whitespace-nowrap text-sm text-muted">
-            Workspace / {activeNote?.title || "Untitled"}
-          </p>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            {activeNote ? (
+              <Tooltip>
+                <TooltipTrigger
+                  aria-label={
+                    activeNote.isFavorite ? "Unfavorite" : "Add to favorites"
+                  }
+                  onClick={() =>
+                    toggleFavorite(activeNote.id, !activeNote.isFavorite)
+                  }
+                  className="grid size-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                >
+                  <Star
+                    className={`size-4 ${activeNote.isFavorite ? "fill-amber-400 text-amber-400" : ""}`}
+                  />
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {activeNote.isFavorite ? "Unfavorite" : "Add to favorites"}
+                </TooltipContent>
+              </Tooltip>
+            ) : null}
             <LandingProfileMenu
               profileLabel={profileLabel}
               image={profileImage}
@@ -1114,172 +1185,32 @@ export function WorkspaceNotes({
           </div>
         </header>
 
-        <div className="flex items-center gap-2 border-b border-white/10 px-6 py-3">
-          <button
-            type="button"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyBlockFormat("h1")}
-            className={`rounded-lg border px-3 py-1.5 text-sm transition ${
-              activeBlockFormat === "h1"
-                ? "border-white/30 bg-white/10 text-foreground"
-                : "border-white/15 text-muted hover:bg-white/5 hover:text-foreground"
-            }`}
-          >
-            H1
-          </button>
-          <button
-            type="button"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyBlockFormat("h2")}
-            className={`rounded-lg border px-3 py-1.5 text-sm transition ${
-              activeBlockFormat === "h2"
-                ? "border-white/30 bg-white/10 text-foreground"
-                : "border-white/15 text-muted hover:bg-white/5 hover:text-foreground"
-            }`}
-          >
-            H2
-          </button>
-          <button
-            type="button"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyBlockFormat("p")}
-            className={`rounded-lg border px-3 py-1.5 text-sm transition ${
-              activeBlockFormat === "p"
-                ? "border-white/30 bg-white/10 text-foreground"
-                : "border-white/15 text-muted hover:bg-white/5 hover:text-foreground"
-            }`}
-          >
-            P
-          </button>
-          <button
-            type="button"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyTextFormat("bold")}
-            className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition ${
-              activeTextFormats.includes("bold")
-                ? "border-white/30 bg-white/10 text-foreground"
-                : "border-white/15 text-muted hover:bg-white/5 hover:text-foreground"
-            }`}
-          >
-            B
-          </button>
-          <button
-            type="button"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => applyTextFormat("italic")}
-            className={`rounded-lg border px-3 py-1.5 text-sm italic transition ${
-              activeTextFormats.includes("italic")
-                ? "border-white/30 bg-white/10 text-foreground"
-                : "border-white/15 text-muted hover:bg-white/5 hover:text-foreground"
-            }`}
-          >
-            I
-          </button>
-          <button
-            type="button"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => setIsCodeSnippetBoxOpen((current) => !current)}
-            className={`rounded-lg border px-3 py-1.5 text-sm transition ${
-              isCodeSnippetBoxOpen
-                ? "border-white/30 bg-white/10 text-foreground"
-                : "border-white/15 text-muted hover:bg-white/5 hover:text-foreground"
-            }`}
-          >
-            Code
-          </button>
-          <button
-            type="button"
-            disabled={!activeNote || isInsertingImage}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => imageInputRef.current?.click()}
-            className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-muted transition enabled:hover:bg-white/5 enabled:hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {isInsertingImage ? "Uploading..." : "Image"}
-          </button>
-        </div>
-        <input
-          ref={imageInputRef}
-          type="file"
-          accept="image/*"
-          onChange={onImageInputChange}
-          className="hidden"
-        />
+        <article className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-6 py-10">
+          {error ? (
+            <p className="mb-4 text-sm text-destructive">{error}</p>
+          ) : null}
 
-        {isCodeSnippetBoxOpen ? (
-          <div className="border-b border-white/10 px-6 py-4">
-            <div className="rounded-2xl border border-dashed border-white/15 p-4">
-              <div className="mb-3 flex items-center gap-3">
-                <label
-                  htmlFor="code-snippet-language"
-                  className="text-xs uppercase tracking-[0.18em] text-muted"
-                >
-                  Language
-                </label>
-                <select
-                  id="code-snippet-language"
-                  value={codeSnippetLanguage}
-                  onChange={(event) =>
-                    setCodeSnippetLanguage(
-                      event.target.value as CodeSnippetLanguage,
-                    )
-                  }
-                  className="rounded-xl border border-white/15 bg-transparent px-3 py-2 text-sm text-foreground outline-none"
-                >
-                  {codeSnippetLanguages.map((language) => (
-                    <option
-                      key={language}
-                      value={language}
-                      className="bg-surface text-foreground"
-                    >
-                      {language}
-                    </option>
-                  ))}
-                </select>
+          {isLoading ? (
+            <section className="space-y-5 pt-10" aria-label="Loading notes">
+              <div className="h-10 w-20 rounded-md bg-muted" />
+              <div className="h-12 w-3/4 rounded-md bg-muted" />
+              <div className="space-y-3">
+                <div className="h-5 w-full rounded bg-muted" />
+                <div className="h-5 w-11/12 rounded bg-muted" />
+                <div className="h-5 w-2/3 rounded bg-muted" />
               </div>
-              <textarea
-                value={codeSnippetValue}
-                onChange={(event) => setCodeSnippetValue(event.target.value)}
-                onPaste={(event) =>
-                  pastePlainTextIntoField(event, setCodeSnippetValue)
-                }
-                placeholder="Paste code"
-                spellCheck={false}
-                className="min-h-44 w-full resize-y border border-dashed border-white/15 bg-transparent px-4 py-3 font-mono text-[15px] leading-7 text-foreground outline-none placeholder:text-muted"
+            </section>
+          ) : null}
+
+          {activeNote ? (
+            <div className="mb-2">
+              <EmojiPicker
+                value={activeIcon}
+                onChange={setActiveNoteIcon}
+                size="lg"
               />
-              <div className="mt-3 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCodeSnippetValue("");
-                    setEditingSnippetId(null);
-                    setIsCodeSnippetBoxOpen(false);
-                  }}
-                  className="rounded-xl border border-white/15 px-3 py-2 text-sm text-muted transition hover:bg-white/5 hover:text-foreground"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={isInsertingCodeSnippet || !codeSnippetValue.trim()}
-                  onMouseDown={(event) => {
-                    event.preventDefault();
-                    void insertCodeSnippet();
-                  }}
-                  className="rounded-xl border border-white/15 px-3 py-2 text-sm text-foreground transition enabled:hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isInsertingCodeSnippet
-                    ? "Adding..."
-                    : editingSnippetId
-                      ? "Save snippet"
-                      : "Insert snippet"}
-                </button>
-              </div>
             </div>
-          </div>
-        ) : null}
-
-        <article className="w-full flex-1 px-6 py-8">
-          {error ? <p className="mb-4 text-sm text-red-400">{error}</p> : null}
+          ) : null}
 
           <input
             aria-label="Note title"
@@ -1289,8 +1220,79 @@ export function WorkspaceNotes({
               updateActiveNote({ title: event.target.value })
             }
             disabled={!activeNote}
-            className="mb-6 w-full bg-transparent font-sans text-5xl font-semibold leading-tight text-foreground outline-none placeholder:text-foreground/35 disabled:opacity-50"
+            className="mb-6 w-full bg-transparent font-sans text-[40px] font-bold leading-tight text-foreground outline-none placeholder:text-muted-foreground/60 disabled:opacity-50"
           />
+
+          {activeNote ? (
+            <div className="sticky top-0 z-10 mb-8 flex flex-wrap items-center gap-1 border-y border-border bg-background/95 py-2 backdrop-blur">
+              <EditorToolbarButton
+                label="Paragraph"
+                active={activeBlockFormat === "p"}
+                onClick={() => applyBlockFormat("p")}
+              >
+                <span className="text-xs font-semibold">P</span>
+              </EditorToolbarButton>
+              <EditorToolbarButton
+                label="Heading 1"
+                active={activeBlockFormat === "h1"}
+                onClick={() => applyBlockFormat("h1")}
+              >
+                <Heading1 className="size-4" />
+              </EditorToolbarButton>
+              <EditorToolbarButton
+                label="Heading 2"
+                active={activeBlockFormat === "h2"}
+                onClick={() => applyBlockFormat("h2")}
+              >
+                <Heading2 className="size-4" />
+              </EditorToolbarButton>
+              <span className="mx-1 h-5 w-px bg-border" />
+              <EditorToolbarButton
+                label="Bold"
+                active={activeTextFormats.includes("bold")}
+                onClick={() => applyTextFormat("bold")}
+              >
+                <Bold className="size-4" />
+              </EditorToolbarButton>
+              <EditorToolbarButton
+                label="Italic"
+                active={activeTextFormats.includes("italic")}
+                onClick={() => applyTextFormat("italic")}
+              >
+                <Italic className="size-4" />
+              </EditorToolbarButton>
+              <span className="mx-1 h-5 w-px bg-border" />
+              <EditorToolbarButton
+                label="Insert code snippet"
+                active={isCodeSnippetBoxOpen}
+                onClick={() => {
+                  saveEditorSelection();
+                  setEditingSnippetId(null);
+                  setCodeSnippetValue("");
+                  setIsCodeSnippetBoxOpen(true);
+                }}
+              >
+                <Code2 className="size-4" />
+              </EditorToolbarButton>
+              <EditorToolbarButton
+                label={isInsertingImage ? "Inserting image" : "Insert image"}
+                active={isInsertingImage}
+                onClick={() => {
+                  saveEditorSelection();
+                  imageInputRef.current?.click();
+                }}
+              >
+                <ImageIcon className="size-4" />
+              </EditorToolbarButton>
+              <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={onImageInputChange}
+              />
+            </div>
+          ) : null}
 
           <section
             className="relative min-h-[62vh]"
@@ -1364,7 +1366,7 @@ export function WorkspaceNotes({
                   type="button"
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => editSnippet(hoveredSnippetId)}
-                  className="rounded-xl border border-white/15 bg-background/95 px-2.5 py-1 text-xs text-foreground transition hover:bg-white/10"
+                  className="rounded-xl border border-border bg-background px-2.5 py-1 text-xs text-foreground transition hover:bg-accent"
                 >
                   Edit
                 </button>
@@ -1372,7 +1374,7 @@ export function WorkspaceNotes({
                   type="button"
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={() => deleteSnippet(hoveredSnippetId)}
-                  className="rounded-xl border border-white/15 bg-background/95 px-2.5 py-1 text-xs text-red-300 transition hover:bg-red-500/10"
+                  className="rounded-xl border border-border bg-background px-2.5 py-1 text-xs text-destructive transition hover:bg-destructive/10"
                 >
                   Del
                 </button>
@@ -1382,7 +1384,7 @@ export function WorkspaceNotes({
               <>
                 <div
                   data-image-overlay="true"
-                  className="pointer-events-none absolute z-20 rounded-md border border-white/50"
+                  className="pointer-events-none absolute z-20 rounded-md border border-foreground/60"
                   style={{
                     left: selectedImageBounds.left,
                     top: selectedImageBounds.top,
@@ -1394,7 +1396,7 @@ export function WorkspaceNotes({
                   type="button"
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={deleteSelectedImage}
-                  className="absolute z-30 rounded-lg border border-white/15 bg-background/95 px-2 py-1 text-xs text-red-300 transition hover:bg-red-500/10"
+                  className="absolute z-30 rounded-lg border border-border bg-background px-2 py-1 text-xs text-destructive transition hover:bg-destructive/10"
                   style={{
                     left: selectedImageBounds.left + selectedImageBounds.width,
                     top: selectedImageBounds.top - 10,
@@ -1406,7 +1408,7 @@ export function WorkspaceNotes({
                 <button
                   type="button"
                   onMouseDown={(event) => startImageResize("nw", event)}
-                  className="absolute z-30 h-3 w-3 cursor-nwse-resize rounded-full border border-white/70 bg-background"
+                  className="absolute z-30 h-3 w-3 cursor-nwse-resize rounded-full border border-foreground/70 bg-background"
                   style={{
                     left: selectedImageBounds.left,
                     top: selectedImageBounds.top,
@@ -1417,7 +1419,7 @@ export function WorkspaceNotes({
                 <button
                   type="button"
                   onMouseDown={(event) => startImageResize("ne", event)}
-                  className="absolute z-30 h-3 w-3 cursor-nesw-resize rounded-full border border-white/70 bg-background"
+                  className="absolute z-30 h-3 w-3 cursor-nesw-resize rounded-full border border-foreground/70 bg-background"
                   style={{
                     left: selectedImageBounds.left + selectedImageBounds.width,
                     top: selectedImageBounds.top,
@@ -1428,7 +1430,7 @@ export function WorkspaceNotes({
                 <button
                   type="button"
                   onMouseDown={(event) => startImageResize("sw", event)}
-                  className="absolute z-30 h-3 w-3 cursor-nesw-resize rounded-full border border-white/70 bg-background"
+                  className="absolute z-30 h-3 w-3 cursor-nesw-resize rounded-full border border-foreground/70 bg-background"
                   style={{
                     left: selectedImageBounds.left,
                     top: selectedImageBounds.top + selectedImageBounds.height,
@@ -1439,7 +1441,7 @@ export function WorkspaceNotes({
                 <button
                   type="button"
                   onMouseDown={(event) => startImageResize("se", event)}
-                  className="absolute z-30 h-3 w-3 cursor-nwse-resize rounded-full border border-white/70 bg-background"
+                  className="absolute z-30 h-3 w-3 cursor-nwse-resize rounded-full border border-foreground/70 bg-background"
                   style={{
                     left: selectedImageBounds.left + selectedImageBounds.width,
                     top: selectedImageBounds.top + selectedImageBounds.height,
@@ -1450,7 +1452,7 @@ export function WorkspaceNotes({
               </>
             ) : null}
             {!hasEditorContent ? (
-              <p className="pointer-events-none absolute left-0 top-0 text-[22px] leading-[1.35] text-muted">
+              <p className="pointer-events-none absolute left-0 top-0 text-[22px] leading-[1.35] text-muted-foreground">
                 Start typing your notes...
               </p>
             ) : null}
@@ -1487,21 +1489,152 @@ export function WorkspaceNotes({
                   (file) => file.type.startsWith("image/"),
                 );
 
-                if (!imageFile) {
+                if (imageFile) {
+                  event.preventDefault();
+                  void insertImageFile(imageFile);
+                  return;
+                }
+
+                const html = event.clipboardData.getData("text/html");
+                const text = event.clipboardData.getData("text/plain");
+
+                if (!html && !text) {
                   return;
                 }
 
                 event.preventDefault();
-                void insertImageFile(imageFile);
+                const markup = html
+                  ? sanitizeNoteHtml(html)
+                  : `<p>${escapeHtml(text).replace(/\n/g, "<br>")}</p>`;
+
+                if (insertMarkupIntoEditor(markup) && editorRef.current) {
+                  updateActiveNote({ content: editorRef.current.innerHTML });
+                }
               }}
               onBlur={() => {
                 refreshEditorFormats();
               }}
-              className="min-h-[62vh] w-full bg-transparent text-[22px] leading-[1.35] text-foreground/95 outline-none disabled:opacity-50 [&_figure[data-code-snippet='true']_.shiki]:bg-transparent! [&_figure[data-code-snippet='true']_.shiki]:p-0 [&_figure[data-code-snippet='true']_code]:grid [&_figure[data-code-snippet='true']_code]:gap-0 [&_figure[data-code-snippet='true']_code]:font-mono [&_figure[data-code-snippet='true']_code]:text-[15px] [&_figure[data-code-snippet='true']_code]:leading-7 [&_figure[data-code-snippet='true']_pre]:overflow-x-auto [&_h1]:mb-3 [&_h1]:text-4xl [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:text-3xl [&_h2]:font-semibold [&_img]:my-4 [&_img]:max-w-full [&_img]:rounded-xl [&_img]:cursor-pointer [&_p]:mb-2 [&_strong]:font-semibold [&_em]:italic"
+              className="min-h-[62vh] w-full bg-transparent text-[22px] leading-[1.35] text-foreground outline-none disabled:opacity-50 [&_figure[data-code-snippet='true']_.shiki]:bg-transparent! [&_figure[data-code-snippet='true']_.shiki]:p-0 [&_figure[data-code-snippet='true']_code]:grid [&_figure[data-code-snippet='true']_code]:gap-0 [&_figure[data-code-snippet='true']_code]:font-mono [&_figure[data-code-snippet='true']_code]:text-[15px] [&_figure[data-code-snippet='true']_code]:leading-7 [&_figure[data-code-snippet='true']_pre]:overflow-x-auto [&_h1]:mb-3 [&_h1]:text-4xl [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:text-3xl [&_h2]:font-semibold [&_img]:my-4 [&_img]:max-w-full [&_img]:rounded-xl [&_img]:cursor-pointer [&_p]:mb-2 [&_strong]:font-semibold [&_em]:italic"
             ></article>
           </section>
         </article>
       </section>
+
+      {isCodeSnippetBoxOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4">
+          <section className="w-full max-w-2xl rounded-lg border border-border bg-popover p-4 text-popover-foreground shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-base font-semibold">
+                  {editingSnippetId
+                    ? "Edit code snippet"
+                    : "Insert code snippet"}
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Choose a language and paste the code block.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCodeSnippetBoxOpen(false);
+                  setEditingSnippetId(null);
+                  setCodeSnippetValue("");
+                }}
+                className="rounded-md border border-border px-2 py-1 text-sm text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              >
+                Close
+              </button>
+            </div>
+            <div className="mt-4 grid gap-3">
+              <label className="grid gap-1.5 text-sm">
+                <span className="text-muted-foreground">Language</span>
+                <select
+                  value={codeSnippetLanguage}
+                  onChange={(event) =>
+                    setCodeSnippetLanguage(
+                      event.target.value as CodeSnippetLanguage,
+                    )
+                  }
+                  className="h-9 rounded-md border border-border bg-background px-3 text-foreground outline-none focus:border-ring"
+                >
+                  {codeSnippetLanguages.map((language) => (
+                    <option key={language} value={language}>
+                      {language}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1.5 text-sm">
+                <span className="text-muted-foreground">Code</span>
+                <textarea
+                  value={codeSnippetValue}
+                  onChange={(event) => setCodeSnippetValue(event.target.value)}
+                  onPaste={(event) =>
+                    pastePlainTextIntoField(event, setCodeSnippetValue)
+                  }
+                  className="min-h-72 resize-y rounded-md border border-border bg-background px-3 py-2 font-mono text-sm leading-6 text-foreground outline-none focus:border-ring"
+                  spellCheck={false}
+                />
+              </label>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCodeSnippetBoxOpen(false);
+                  setEditingSnippetId(null);
+                  setCodeSnippetValue("");
+                }}
+                className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isInsertingCodeSnippet || !codeSnippetValue.trim()}
+                onClick={() => {
+                  void insertCodeSnippet();
+                }}
+                className="rounded-md border border-border bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isInsertingCodeSnippet ? "Saving..." : "Insert"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function EditorToolbarButton({
+  active,
+  children,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  children: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        type="button"
+        aria-label={label}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={onClick}
+        className={`grid size-8 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground ${
+          active
+            ? "border-ring bg-accent text-foreground"
+            : "border-transparent"
+        }`}
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{label}</TooltipContent>
+    </Tooltip>
   );
 }

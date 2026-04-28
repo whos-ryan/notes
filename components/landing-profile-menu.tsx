@@ -1,5 +1,6 @@
 "use client";
 
+import { Camera, LogOut, Save, X } from "lucide-react";
 import Image from "next/image";
 import { useRef, useState } from "react";
 
@@ -81,16 +82,16 @@ export function LandingProfileMenu({
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="inline-flex size-11 items-center justify-center rounded-full border border-white/15 bg-black/25 text-sm text-foreground transition hover:bg-white/10"
+        className="inline-flex size-9 items-center justify-center rounded-md border border-border bg-sidebar text-sm text-foreground transition hover:bg-accent"
         aria-label={`${profileLabel} profile`}
       >
-        <span className="inline-flex size-8 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-black/25 text-xs">
+        <span className="inline-flex size-6 items-center justify-center overflow-hidden rounded-md border border-border bg-muted text-xs">
           {profileImage ? (
             <Image
               src={profileImage}
               alt={profileLabel}
-              width={32}
-              height={32}
+              width={24}
+              height={24}
               className="size-full"
               unoptimized
             />
@@ -101,22 +102,28 @@ export function LandingProfileMenu({
       </button>
 
       {isOpen ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-3xl border border-white/15 bg-surface shadow-2xl shadow-black/40">
-            <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-              <h2 className="font-sans text-xl font-semibold">Profile</h2>
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4">
+          <div className="w-full max-w-md border border-border bg-popover text-popover-foreground shadow-xl">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                  Account
+                </p>
+                <h2 className="mt-1 text-xl font-semibold">Profile</h2>
+              </div>
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                className="rounded-lg border border-white/15 px-2 py-1 text-sm text-muted hover:bg-white/5 hover:text-foreground"
+                className="grid size-8 place-items-center rounded-md border border-border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                aria-label="Close profile"
               >
-                Close
+                <X className="size-4" />
               </button>
             </div>
 
-            <div className="space-y-4 px-5 py-5">
+            <div className="space-y-5 px-5 py-5">
               <div className="flex items-center gap-4">
-                <div className="inline-flex size-16 items-center justify-center rounded-2xl border border-white/15 bg-black/25 text-2xl">
+                <div className="inline-flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted text-2xl">
                   {pendingImage ? (
                     <Image
                       src={pendingImage}
@@ -131,14 +138,17 @@ export function LandingProfileMenu({
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <p className="text-sm text-muted">{profileLabel}</p>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {profileLabel}
+                  </p>
                   <button
                     type="button"
                     onClick={onPickImage}
-                    className="rounded-xl border border-white/15 px-3 py-2 text-sm text-foreground hover:bg-white/10"
+                    className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm text-muted-foreground transition hover:bg-accent hover:text-foreground"
                   >
-                    Edit/Add profile picture
+                    <Camera className="size-4" />
+                    Change picture
                   </button>
                   <input
                     ref={fileInputRef}
@@ -152,22 +162,28 @@ export function LandingProfileMenu({
                 </div>
               </div>
 
-              {error ? <p className="text-sm text-red-400">{error}</p> : null}
+              {error ? (
+                <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  {error}
+                </p>
+              ) : null}
 
               <div className="grid gap-2">
                 <button
                   type="button"
                   disabled={isSaving}
                   onClick={() => void onSaveProfile()}
-                  className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-medium transition enabled:hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-border bg-primary px-3 text-sm font-medium text-primary-foreground transition enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
+                  <Save className="size-4" />
                   {isSaving ? "Saving..." : "Save picture"}
                 </button>
                 <button
                   type="button"
                   onClick={() => void onLogout()}
-                  className="rounded-xl border border-red-400/40 px-3 py-2 text-sm text-red-300 transition hover:bg-red-500/10"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-destructive/30 px-3 text-sm text-destructive transition hover:bg-destructive/10"
                 >
+                  <LogOut className="size-4" />
                   Log out
                 </button>
               </div>

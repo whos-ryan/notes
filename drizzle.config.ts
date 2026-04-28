@@ -20,7 +20,10 @@ const getEnvValueFromFile = (filePath: string, key: string) => {
 };
 
 const databaseUrl =
+  process.env.DATABASE_MIGRATION_URL ??
   process.env.DATABASE_URL ??
+  getEnvValueFromFile(".env.local", "DATABASE_MIGRATION_URL") ??
+  getEnvValueFromFile(".env", "DATABASE_MIGRATION_URL") ??
   getEnvValueFromFile(".env.local", "DATABASE_URL") ??
   getEnvValueFromFile(".env", "DATABASE_URL");
 

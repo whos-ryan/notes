@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { user } from "@/database/auth-schema";
 
 export const noteFolder = pgTable(
@@ -34,6 +34,10 @@ export const note = pgTable(
     }),
     title: text("title").notNull().default("Untitled"),
     content: text("content").notNull().default(""),
+    icon: text("icon"),
+    isFavorite: boolean("is_favorite").notNull().default(false),
+    isArchived: boolean("is_archived").notNull().default(false),
+    archivedAt: timestamp("archived_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -44,6 +48,8 @@ export const note = pgTable(
     index("note_folder_id_idx").on(table.folderId),
     index("note_user_id_idx").on(table.userId),
     index("note_updated_at_idx").on(table.updatedAt),
+    index("note_is_favorite_idx").on(table.isFavorite),
+    index("note_is_archived_idx").on(table.isArchived),
   ],
 );
 

@@ -1,7 +1,16 @@
 "use client";
 
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  FileText,
+  Menu,
+  Plus,
+} from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { BrandMark } from "@/components/brand-mark";
 import {
   CalendarEventForm,
   type CalendarEventFormValues,
@@ -406,87 +415,80 @@ export function WorkspaceCalendar({
   }, [editingEventId, closeEditor]);
 
   return (
-    <div className="flex min-h-screen w-full bg-black/15">
+    <div className="flex h-screen w-full overflow-hidden bg-background">
       <aside
         style={{
           width: isSidebarCollapsed ? 0 : sidebarWidth,
         }}
-        className={`relative m-3 mr-0 flex h-[calc(100vh-24px)] shrink-0 flex-col rounded-3xl border border-white/10 bg-surface/70 transition-[width] duration-200 ${
+        className={`relative hidden h-screen shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200 lg:flex ${
           isSidebarCollapsed ? "overflow-hidden border-r-0" : ""
         }`}
       >
-        <div className="border-b border-white/10 px-4 py-3">
-          <p className="text-xs uppercase tracking-[0.2em] text-muted">
-            Workspace
-          </p>
-          <h1 className="mt-1 font-sans text-[30px] font-semibold leading-none text-foreground">
-            notes.os
-          </h1>
+        <div className="flex h-11 items-center gap-2 border-b border-sidebar-border px-3">
+          <BrandMark size="sm" />
         </div>
 
-        <div className="border-b border-white/10 p-3">
-          <div className="flex flex-col gap-2">
+        <div className="border-b border-sidebar-border p-2">
+          <div className="space-y-0.5">
             <Link
               href="/workspace"
-              className="block w-full rounded-xl border border-white/15 px-3 py-2 text-center text-sm text-muted transition hover:bg-white/10 hover:text-foreground"
+              className="flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-sm text-sidebar-foreground/85 transition hover:bg-sidebar-accent"
             >
-              Open notes
+              <FileText className="size-3.5 text-muted-foreground" />
+              Notes
             </Link>
             <Link
               href="/workspace/calendar"
-              className="block w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-center text-sm text-foreground"
+              className="flex w-full items-center gap-2 rounded-sm bg-sidebar-accent px-1.5 py-1 text-sm text-sidebar-foreground"
             >
-              Open calendar
+              <CalendarDays className="size-3.5 text-muted-foreground" />
+              Calendar
             </Link>
             <button
               type="button"
               onClick={() => openCreateEditor(selectedDate)}
-              className="w-full rounded-xl border border-white/15 px-3 py-2 text-sm font-medium text-muted transition hover:bg-white/10 hover:text-foreground"
+              className="flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-sm text-sidebar-foreground/85 transition hover:bg-sidebar-accent"
             >
-              New calendar event
+              <Plus className="size-3.5 text-muted-foreground" />
+              New event
             </button>
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-3">
-          <p className="text-xs uppercase tracking-[0.16em] text-muted">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Calendar
           </p>
-          <p className="mt-2 text-sm text-muted">
-            Track meetings, deadlines, events, and reminders.
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            Track meetings, deadlines, and reminders beside your pages.
           </p>
         </div>
 
-        <div className="border-t border-white/10 p-3">
+        <div className="border-t border-sidebar-border p-2">
           <Link
             href="/"
-            className="block w-full rounded-xl border border-white/10 px-3 py-2 text-center text-sm text-muted transition hover:bg-white/5 hover:text-foreground"
+            className="flex w-full items-center rounded-sm px-1.5 py-1 text-sm text-muted-foreground transition hover:bg-sidebar-accent hover:text-foreground"
           >
-            Back to landing
+            Home
           </Link>
         </div>
       </aside>
 
-      <section className="m-3 ml-0 flex min-w-0 flex-1 flex-col rounded-3xl border border-white/10 bg-background/90">
-        <header className="flex flex-wrap items-center gap-3 border-b border-white/10 px-6 py-4">
+      <section className="flex min-w-0 flex-1 flex-col bg-background">
+        <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3">
           <button
             type="button"
             onClick={() => setIsSidebarCollapsed((current) => !current)}
-            className="rounded-xl border border-white/15 p-2 text-muted transition hover:bg-white/5 hover:text-foreground"
+            className="grid size-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
             aria-label="Toggle sidebar"
           >
-            <span className="sr-only">Toggle sidebar</span>
-            <span className="flex flex-col gap-1">
-              <span className="h-px w-3 bg-current" />
-              <span className="h-px w-3 bg-current" />
-              <span className="h-px w-3 bg-current" />
-            </span>
+            <Menu className="size-4" />
           </button>
-          <p className="truncate whitespace-nowrap text-sm text-muted">
+          <p className="truncate text-sm text-muted-foreground">
             Workspace / Calendar
           </p>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex min-w-0 items-center gap-1">
             <button
               type="button"
               onClick={() =>
@@ -495,11 +497,12 @@ export function WorkspaceCalendar({
                     new Date(month.getFullYear(), month.getMonth() - 1, 1),
                 )
               }
-              className="rounded-xl border border-white/15 px-3 py-2 text-sm text-muted transition hover:bg-white/5 hover:text-foreground"
+              className="grid size-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              aria-label="Previous month"
             >
-              Prev
+              <ChevronLeft className="size-4" />
             </button>
-            <p className="min-w-40 text-center text-sm font-medium text-foreground">
+            <p className="min-w-28 text-center text-sm font-medium text-foreground sm:min-w-40">
               {monthLabel}
             </p>
             <button
@@ -510,9 +513,10 @@ export function WorkspaceCalendar({
                     new Date(month.getFullYear(), month.getMonth() + 1, 1),
                 )
               }
-              className="rounded-xl border border-white/15 px-3 py-2 text-sm text-muted transition hover:bg-white/5 hover:text-foreground"
+              className="grid size-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              aria-label="Next month"
             >
-              Next
+              <ChevronRight className="size-4" />
             </button>
           </div>
 
@@ -523,15 +527,15 @@ export function WorkspaceCalendar({
         </header>
 
         {error ? (
-          <div className="border-b border-white/10 px-6 py-3">
-            <p className="text-sm text-red-300">{error}</p>
+          <div className="border-b border-border px-6 py-3">
+            <p className="text-sm text-destructive">{error}</p>
           </div>
         ) : null}
 
-        <div className="grid min-h-0 flex-1 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="min-h-[68vh] rounded-2xl border border-white/10 bg-surface/60">
+        <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="min-h-0 overflow-hidden border-b border-border bg-background lg:border-r lg:border-b-0">
             {isLoadingEvents ? (
-              <div className="flex h-full items-center justify-center text-sm text-muted">
+              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                 Loading calendar...
               </div>
             ) : (
@@ -545,8 +549,8 @@ export function WorkspaceCalendar({
             )}
           </div>
 
-          <aside className="flex min-h-0 flex-col rounded-2xl border border-white/10 bg-surface/60 p-4">
-            <p className="text-xs uppercase tracking-[0.16em] text-muted">
+          <aside className="flex min-h-0 max-h-[42vh] flex-col bg-sidebar p-4 lg:max-h-none">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Selected date
             </p>
             <h2 className="mt-1 text-lg font-semibold text-foreground">
@@ -556,14 +560,15 @@ export function WorkspaceCalendar({
             <button
               type="button"
               onClick={() => openCreateEditor(selectedDate)}
-              className="mt-4 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-foreground transition hover:bg-white/20"
+              className="mt-4 inline-flex h-9 items-center justify-center gap-2 rounded-md border border-border bg-primary px-3 text-sm font-medium text-primary-foreground transition hover:opacity-90"
             >
+              <Plus className="size-4" />
               New event
             </button>
 
             <div className="mt-4 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
               {selectedDateEvents.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-white/15 px-3 py-3 text-sm text-muted">
+                <p className="rounded-xl border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
                   No items for this day.
                 </p>
               ) : (
@@ -572,7 +577,7 @@ export function WorkspaceCalendar({
                     key={event.id}
                     type="button"
                     onClick={() => openEditEditor(event.id)}
-                    className="w-full rounded-xl border border-white/10 bg-black/20 p-3 text-left transition hover:bg-white/5"
+                    className="w-full rounded-md border border-border bg-background p-3 text-left transition hover:bg-accent"
                   >
                     <div className="flex items-center justify-between gap-3">
                       <p className="truncate text-sm font-medium text-foreground">
@@ -586,17 +591,17 @@ export function WorkspaceCalendar({
                         {getCalendarEventKindLabel(event.kind)}
                       </span>
                     </div>
-                    <p className="mt-2 text-xs text-muted">
+                    <p className="mt-2 text-xs text-muted-foreground">
                       {formatEventTimeLabel(event.startsAt, event.allDay)} ·{" "}
                       {getCalendarEventStatusLabel(event.status)}
                     </p>
                     {event.location ? (
-                      <p className="mt-1 truncate text-xs text-muted">
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
                         {event.location}
                       </p>
                     ) : null}
                     {event.noteId ? (
-                      <p className="mt-1 truncate text-xs text-muted">
+                      <p className="mt-1 truncate text-xs text-muted-foreground">
                         Note: {notesById.get(event.noteId) ?? "Linked note"}
                       </p>
                     ) : null}
@@ -609,8 +614,8 @@ export function WorkspaceCalendar({
       </section>
 
       {isEditorOpen ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-4">
-          <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-surface p-6">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/55 p-4">
+          <div className="max-h-[calc(100dvh-32px)] w-full max-w-2xl overflow-y-auto border border-border bg-popover p-5 text-popover-foreground shadow-xl">
             <CalendarEventForm
               mode={editingEventId ? "edit" : "create"}
               values={formValues}

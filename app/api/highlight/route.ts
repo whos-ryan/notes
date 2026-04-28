@@ -4,6 +4,13 @@ import {
   type CodeSnippetResponse,
   parseCodeSnippetInput,
 } from "@/lib/code-snippets";
+import { codeSnippetMaxLength } from "@/lib/content-safety";
+import {
+  clampText,
+  getClientKey,
+  rateLimit,
+  readJsonBody,
+} from "@/lib/security";
 import { highlightCodeSnippet } from "@/lib/shiki";
 
 export async function POST(request: Request) {
@@ -15,7 +22,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = parseCodeSnippetInput(await request.json());
+  const limited = rateLimit({
+    key: `highlight:${getClientKey(request, session.user.id)}`,
+    limit: 60,
+    windowMs: 60_000,
+  });
+
+  if (limited) {
+    return limited;
+  }
+
+  const json = await readJsonBody(request);
+
+  if (json.error) {
+    return NextResponse.json({ error: json.error }, { status: 400 });
+  }
+
+  const body = parseCodeSnippetInput(json.value);
 
   if (!body || !body.code.trim()) {
     return NextResponse.json(
@@ -25,7 +48,7 @@ export async function POST(request: Request) {
   }
 
   const markup = await highlightCodeSnippet(
-    body.code,
+    clampText(body.code, codeSnippetMaxLength),
     body.language,
     body.snippetId,
   );

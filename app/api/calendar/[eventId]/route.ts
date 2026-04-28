@@ -11,7 +11,19 @@ import {
   parseCalendarEventMutationInput,
   serializeCalendarEvent,
 } from "@/lib/calendar-contracts";
-import { getDb } from "@/lib/db";
+import {
+  calendarDescriptionMaxLength,
+  calendarLocationMaxLength,
+  calendarTitleMaxLength,
+} from "@/lib/content-safety";
+import { withUserDb } from "@/lib/db";
+import {
+  clampText,
+  encryptField,
+  getClientKey,
+  rateLimit,
+  readJsonBody,
+} from "@/lib/security";
 
 type RouteContext = {
   params: Promise<{
@@ -54,32 +66,54 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const limited = rateLimit({
+    key: `calendar:update:${getClientKey(request, session.user.id)}`,
+    limit: 80,
+    windowMs: 60_000,
+  });
+
+  if (limited) {
+    return limited;
+  }
+
   const { eventId } = await context.params;
 
-  const [existingEvent] = await getDb()
-    .select()
-    .from(calendarEvent)
-    .where(
-      and(
-        eq(calendarEvent.id, eventId),
-        eq(calendarEvent.userId, session.user.id),
-      ),
-    )
-    .limit(1);
+  const [existingEvent] = await withUserDb(session.user.id, async (db) =>
+    db
+      .select()
+      .from(calendarEvent)
+      .where(
+        and(
+          eq(calendarEvent.id, eventId),
+          eq(calendarEvent.userId, session.user.id),
+        ),
+      )
+      .limit(1),
+  );
 
   if (!existingEvent) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const body = parseCalendarEventMutationInput(await request.json());
+  const json = await readJsonBody(request);
+
+  if (json.error) {
+    return NextResponse.json({ error: json.error }, { status: 400 });
+  }
+
+  const body = parseCalendarEventMutationInput(json.value);
   const updateData: CalendarEventUpdateInput = {};
 
   if (typeof body.title === "string") {
-    updateData.title = body.title.trim() || "Untitled";
+    updateData.title = encryptField(
+      clampText(body.title.trim(), calendarTitleMaxLength) || "Untitled",
+    );
   }
 
   if (typeof body.description === "string") {
-    updateData.description = body.description;
+    updateData.description = encryptField(
+      clampText(body.description, calendarDescriptionMaxLength),
+    );
   }
 
   if (typeof body.kind === "string") {
@@ -139,7 +173,9 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   if (typeof body.location === "string" || body.location === null) {
-    updateData.location = body.location?.trim() ? body.location.trim() : null;
+    updateData.location = body.location?.trim()
+      ? encryptField(clampText(body.location.trim(), calendarLocationMaxLength))
+      : null;
   }
 
   if (typeof body.noteId === "string" || body.noteId === null) {
@@ -148,11 +184,13 @@ export async function PATCH(request: Request, context: RouteContext) {
     } else {
       const nextNoteId = body.noteId.trim();
 
-      const linkedNote = await getDb()
-        .select({ id: note.id })
-        .from(note)
-        .where(and(eq(note.id, nextNoteId), eq(note.userId, session.user.id)))
-        .limit(1);
+      const linkedNote = await withUserDb(session.user.id, async (db) =>
+        db
+          .select({ id: note.id })
+          .from(note)
+          .where(and(eq(note.id, nextNoteId), eq(note.userId, session.user.id)))
+          .limit(1),
+      );
 
       if (!linkedNote[0]) {
         return NextResponse.json(
@@ -180,16 +218,18 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ event: serializeCalendarEvent(existingEvent) });
   }
 
-  const [updatedEvent] = await getDb()
-    .update(calendarEvent)
-    .set(updateData)
-    .where(
-      and(
-        eq(calendarEvent.id, eventId),
-        eq(calendarEvent.userId, session.user.id),
-      ),
-    )
-    .returning();
+  const [updatedEvent] = await withUserDb(session.user.id, async (db) =>
+    db
+      .update(calendarEvent)
+      .set(updateData)
+      .where(
+        and(
+          eq(calendarEvent.id, eventId),
+          eq(calendarEvent.userId, session.user.id),
+        ),
+      )
+      .returning(),
+  );
 
   if (!updatedEvent) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -207,17 +247,29 @@ export async function DELETE(request: Request, context: RouteContext) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const limited = rateLimit({
+    key: `calendar:delete:${getClientKey(request, session.user.id)}`,
+    limit: 40,
+    windowMs: 60_000,
+  });
+
+  if (limited) {
+    return limited;
+  }
+
   const { eventId } = await context.params;
 
-  const [deletedEvent] = await getDb()
-    .delete(calendarEvent)
-    .where(
-      and(
-        eq(calendarEvent.id, eventId),
-        eq(calendarEvent.userId, session.user.id),
-      ),
-    )
-    .returning();
+  const [deletedEvent] = await withUserDb(session.user.id, async (db) =>
+    db
+      .delete(calendarEvent)
+      .where(
+        and(
+          eq(calendarEvent.id, eventId),
+          eq(calendarEvent.userId, session.user.id),
+        ),
+      )
+      .returning(),
+  );
 
   if (!deletedEvent) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
