@@ -296,8 +296,13 @@ export function WorkspaceNotes({
       setNotes(data.notes);
 
       if (data.notes.length > 0) {
-        setActiveNoteId(data.notes[0].id);
-        setActiveFolderId(data.notes[0].folderId ?? null);
+        const noteId = new URLSearchParams(window.location.search).get(
+          "noteId",
+        );
+        const initialNote =
+          data.notes.find((note) => note.id === noteId) ?? data.notes[0];
+        setActiveNoteId(initialNote.id);
+        setActiveFolderId(initialNote.folderId ?? null);
         setExpandedFolderIds(data.folders.map((folder) => folder.id));
       } else {
         await createNote({ silent: true });

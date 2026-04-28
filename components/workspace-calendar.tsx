@@ -1,22 +1,15 @@
 "use client";
 
-import {
-  CalendarDays,
-  ChevronLeft,
-  ChevronRight,
-  FileText,
-  Menu,
-  Plus,
-} from "lucide-react";
-import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { BrandMark } from "@/components/brand-mark";
+import { ChevronLeft, ChevronRight, Menu, Plus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarEventForm,
   type CalendarEventFormValues,
 } from "@/components/calendar-event-form";
 import { CalendarMonthGrid } from "@/components/calendar-month-grid";
 import { LandingProfileMenu } from "@/components/landing-profile-menu";
+import { CommandPalette } from "@/components/workspace/command-palette";
+import { WorkspaceSidebar } from "@/components/workspace/workspace-sidebar";
 import type {
   CalendarEventDto,
   CalendarEventResponse,
@@ -33,7 +26,13 @@ import {
   toCalendarDayKey,
   toDateTimeInputValue,
 } from "@/lib/calendar-utils";
-import type { NotesListResponse } from "@/lib/notes-contracts";
+import type {
+  NoteFolderRecord,
+  NoteFolderResponse,
+  NoteRecord,
+  NoteResponse,
+  NotesListResponse,
+} from "@/lib/notes-contracts";
 
 type WorkspaceCalendarProps = {
   profileLabel: string;
@@ -136,23 +135,39 @@ export function WorkspaceCalendar({
   profileLabel,
   profileImage,
 }: WorkspaceCalendarProps) {
-  const sidebarWidth = 260;
+  const minSidebarWidth = 220;
+  const maxSidebarWidth = 400;
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [isCommandOpen, setIsCommandOpen] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(
     new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   );
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [events, setEvents] = useState<CalendarEventDto[]>([]);
+  const [folders, setFolders] = useState<NoteFolderRecord[]>([]);
+  const [notes, setNotes] = useState<NoteRecord[]>([]);
   const [noteOptions, setNoteOptions] = useState<NoteOption[]>([]);
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
+  const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
+  const [expandedFolderIds, setExpandedFolderIds] = useState<string[]>([]);
   const [isLoadingEvents, setIsLoadingEvents] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [isSavingEvent, setIsSavingEvent] = useState(false);
   const [isDeletingEvent, setIsDeletingEvent] = useState(false);
+  const [deletingFolderId, setDeletingFolderId] = useState<string | null>(null);
+  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingEventId, setEditingEventId] = useState<string | null>(null);
   const [formValues, setFormValues] = useState<CalendarEventFormValues>(
     buildNewEventFormValues(new Date()),
   );
   const [error, setError] = useState<string | null>(null);
+  const resizeStateRef = useRef<{
+    startX: number;
+    startWidth: number;
+  } | null>(null);
 
   const selectedDateKey = toCalendarDayKey(selectedDate);
 
@@ -180,6 +195,238 @@ export function WorkspaceCalendar({
   const monthLabel = useMemo(
     () => formatMonthLabel(currentMonth),
     [currentMonth],
+  );
+
+  const navigateToNote = useCallback((noteId: string) => {
+    window.location.href = `/workspace?noteId=${encodeURIComponent(noteId)}`;
+  }, []);
+
+  const createNote = useCallback(
+    async (options?: { folderId?: string | null; navigate?: boolean }) => {
+      setError(null);
+      setIsCreating(true);
+
+      const response = await fetch("/api/notes", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          folderId: options?.folderId ?? activeFolderId,
+          title: "Untitled",
+          content: "",
+        }),
+      });
+
+      if (!response.ok) {
+        setError("Unable to create note.");
+        setIsCreating(false);
+        return null;
+      }
+
+      const data = (await response.json()) as NoteResponse;
+      setNotes((current) => [data.note, ...current]);
+      setActiveNoteId(data.note.id);
+      setActiveFolderId(data.note.folderId ?? null);
+
+      if (data.note.folderId) {
+        setExpandedFolderIds((current) =>
+          current.includes(data.note.folderId as string)
+            ? current
+            : [...current, data.note.folderId as string],
+        );
+      }
+
+      setIsCreating(false);
+
+      if (options?.navigate !== false) {
+        navigateToNote(data.note.id);
+      }
+
+      return data.note;
+    },
+    [activeFolderId, navigateToNote],
+  );
+
+  const createFolder = useCallback(async () => {
+    setError(null);
+    setIsCreatingFolder(true);
+
+    const response = await fetch("/api/folders", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: `Folder ${folders.length + 1}`,
+      }),
+    });
+
+    if (!response.ok) {
+      setError("Unable to create folder.");
+      setIsCreatingFolder(false);
+      return null;
+    }
+
+    const data = (await response.json()) as NoteFolderResponse;
+    setFolders((current) => [...current, data.folder]);
+    setActiveFolderId(data.folder.id);
+    setExpandedFolderIds((current) => [...current, data.folder.id]);
+    setIsCreatingFolder(false);
+    return data.folder;
+  }, [folders.length]);
+
+  const renameFolder = useCallback(
+    async (folderId: string, nextName: string) => {
+      setError(null);
+
+      const response = await fetch(`/api/folders/${folderId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name: nextName,
+        }),
+      });
+
+      if (!response.ok) {
+        setError("Unable to rename folder.");
+        return;
+      }
+
+      const data = (await response.json()) as NoteFolderResponse;
+      setFolders((current) =>
+        current.map((folder) =>
+          folder.id === folderId ? data.folder : folder,
+        ),
+      );
+    },
+    [],
+  );
+
+  const deleteFolder = useCallback(
+    async (folderId: string) => {
+      setError(null);
+      setDeletingFolderId(folderId);
+
+      const response = await fetch(`/api/folders/${folderId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        setError("Unable to delete folder.");
+        setDeletingFolderId(null);
+        return;
+      }
+
+      setFolders((current) =>
+        current.filter((folder) => folder.id !== folderId),
+      );
+      setExpandedFolderIds((current) =>
+        current.filter((expandedId) => expandedId !== folderId),
+      );
+      setNotes((current) =>
+        current.map((item) =>
+          item.folderId === folderId ? { ...item, folderId: null } : item,
+        ),
+      );
+
+      if (activeFolderId === folderId) {
+        setActiveFolderId(null);
+      }
+
+      setDeletingFolderId(null);
+    },
+    [activeFolderId],
+  );
+
+  const patchNote = useCallback(
+    async (
+      noteId: string,
+      input: Partial<Pick<NoteRecord, "isFavorite" | "isArchived">>,
+    ) => {
+      setNotes((current) =>
+        current.map((item) =>
+          item.id === noteId ? { ...item, ...input } : item,
+        ),
+      );
+
+      const response = await fetch(`/api/notes/${noteId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      });
+
+      if (!response.ok) {
+        setError("Unable to update note.");
+      }
+    },
+    [],
+  );
+
+  const deleteNote = useCallback(
+    async (noteId: string) => {
+      setError(null);
+      setDeletingNoteId(noteId);
+
+      const response = await fetch(`/api/notes/${noteId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        setError("Unable to delete note.");
+        setDeletingNoteId(null);
+        return;
+      }
+
+      setNotes((current) => {
+        const filtered = current.filter((item) => item.id !== noteId);
+
+        if (activeNoteId === noteId) {
+          const nextNote = filtered[0] ?? null;
+          setActiveNoteId(nextNote?.id ?? null);
+          setActiveFolderId(nextNote?.folderId ?? null);
+        }
+
+        return filtered;
+      });
+
+      setDeletingNoteId(null);
+    },
+    [activeNoteId],
+  );
+
+  const onToggleSidebar = useCallback(() => {
+    setIsSidebarCollapsed((current) => !current);
+  }, []);
+
+  const onToggleFolder = useCallback((folderId: string) => {
+    setExpandedFolderIds((current) =>
+      current.includes(folderId)
+        ? current.filter((id) => id !== folderId)
+        : [...current, folderId],
+    );
+  }, []);
+
+  const onSidebarResizeStart = useCallback(
+    (clientX: number) => {
+      if (isSidebarCollapsed) {
+        return;
+      }
+
+      resizeStateRef.current = {
+        startX: clientX,
+        startWidth: sidebarWidth,
+      };
+    },
+    [isSidebarCollapsed, sidebarWidth],
   );
 
   const fetchEvents = useCallback(async () => {
@@ -224,6 +471,15 @@ export function WorkspaceCalendar({
       }
 
       const data = (await response.json()) as NotesListResponse;
+      setFolders(data.folders);
+      setNotes(data.notes);
+      setExpandedFolderIds(data.folders.map((folder) => folder.id));
+
+      if (data.notes.length > 0) {
+        setActiveNoteId(data.notes[0].id);
+        setActiveFolderId(data.notes[0].folderId ?? null);
+      }
+
       const nextOptions = data.notes
         .map((note) => ({
           id: note.id,
@@ -234,6 +490,47 @@ export function WorkspaceCalendar({
       setNoteOptions(nextOptions);
     })();
   }, []);
+
+  useEffect(() => {
+    if (!resizeStateRef.current || isSidebarCollapsed) {
+      return;
+    }
+
+    const onMouseMove = (event: MouseEvent) => {
+      if (!resizeStateRef.current) {
+        return;
+      }
+
+      const nextWidth =
+        resizeStateRef.current.startWidth +
+        event.clientX -
+        resizeStateRef.current.startX;
+
+      if (nextWidth < minSidebarWidth) {
+        setSidebarWidth(minSidebarWidth);
+        return;
+      }
+
+      if (nextWidth > maxSidebarWidth) {
+        setSidebarWidth(maxSidebarWidth);
+        return;
+      }
+
+      setSidebarWidth(nextWidth);
+    };
+
+    const onMouseUp = () => {
+      resizeStateRef.current = null;
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [isSidebarCollapsed]);
 
   const openCreateEditor = useCallback((forDate: Date) => {
     setEditingEventId(null);
@@ -416,74 +713,68 @@ export function WorkspaceCalendar({
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
-      <aside
-        style={{
-          width: isSidebarCollapsed ? 0 : sidebarWidth,
+      {!isSidebarCollapsed ? (
+        <WorkspaceSidebar
+          profileLabel={profileLabel}
+          profileImage={profileImage}
+          width={sidebarWidth}
+          onCollapse={onToggleSidebar}
+          onResizeStart={(event) => onSidebarResizeStart(event.clientX)}
+          onOpenCommandPalette={() => setIsCommandOpen(true)}
+          activeNoteId={activeNoteId}
+          activeFolderId={activeFolderId}
+          expandedFolderIds={expandedFolderIds}
+          folders={folders}
+          notes={notes}
+          deletingFolderId={deletingFolderId}
+          deletingNoteId={deletingNoteId}
+          isCreating={isCreating}
+          isCreatingFolder={isCreatingFolder}
+          onCreateNote={(folderId) => void createNote({ folderId })}
+          onCreateFolder={() => void createFolder()}
+          onDeleteFolder={(folderId) => void deleteFolder(folderId)}
+          onDeleteNote={(noteId) => void deleteNote(noteId)}
+          onRenameFolder={(folderId, nextName) =>
+            void renameFolder(folderId, nextName)
+          }
+          onSelectFolder={setActiveFolderId}
+          onSelectNote={(noteId, folderId) => {
+            setActiveNoteId(noteId);
+            setActiveFolderId(folderId);
+            navigateToNote(noteId);
+          }}
+          onToggleFolder={onToggleFolder}
+          onToggleFavorite={(noteId, next) =>
+            void patchNote(noteId, { isFavorite: next })
+          }
+        />
+      ) : null}
+
+      <CommandPalette
+        open={isCommandOpen}
+        onOpenChange={setIsCommandOpen}
+        notes={notes}
+        onSelectNote={(noteId, folderId) => {
+          setActiveNoteId(noteId);
+          setActiveFolderId(folderId);
+          navigateToNote(noteId);
         }}
-        className={`relative hidden h-screen shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width] duration-200 lg:flex ${
-          isSidebarCollapsed ? "overflow-hidden border-r-0" : ""
-        }`}
-      >
-        <div className="flex h-11 items-center gap-2 border-b border-sidebar-border px-3">
-          <BrandMark size="sm" />
-        </div>
-
-        <div className="border-b border-sidebar-border p-2">
-          <div className="space-y-0.5">
-            <Link
-              href="/workspace"
-              className="flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-sm text-sidebar-foreground/85 transition hover:bg-sidebar-accent"
-            >
-              <FileText className="size-3.5 text-muted-foreground" />
-              Notes
-            </Link>
-            <Link
-              href="/workspace/calendar"
-              className="flex w-full items-center gap-2 rounded-sm bg-sidebar-accent px-1.5 py-1 text-sm text-sidebar-foreground"
-            >
-              <CalendarDays className="size-3.5 text-muted-foreground" />
-              Calendar
-            </Link>
-            <button
-              type="button"
-              onClick={() => openCreateEditor(selectedDate)}
-              className="flex w-full items-center gap-2 rounded-sm px-1.5 py-1 text-sm text-sidebar-foreground/85 transition hover:bg-sidebar-accent"
-            >
-              <Plus className="size-3.5 text-muted-foreground" />
-              New event
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-3">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Calendar
-          </p>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Track meetings, deadlines, and reminders beside your pages.
-          </p>
-        </div>
-
-        <div className="border-t border-sidebar-border p-2">
-          <Link
-            href="/"
-            className="flex w-full items-center rounded-sm px-1.5 py-1 text-sm text-muted-foreground transition hover:bg-sidebar-accent hover:text-foreground"
-          >
-            Home
-          </Link>
-        </div>
-      </aside>
+        onCreateNote={() => void createNote()}
+        onCreateFolder={() => void createFolder()}
+      />
 
       <section className="flex min-w-0 flex-1 flex-col bg-background">
         <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3">
-          <button
-            type="button"
-            onClick={() => setIsSidebarCollapsed((current) => !current)}
-            className="grid size-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
-            aria-label="Toggle sidebar"
-          >
-            <Menu className="size-4" />
-          </button>
+          {isSidebarCollapsed ? (
+            <button
+              type="button"
+              onClick={onToggleSidebar}
+              className="grid size-7 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              aria-label="Open sidebar"
+            >
+              <Menu className="size-4" />
+            </button>
+          ) : null}
           <p className="truncate text-sm text-muted-foreground">
             Workspace / Calendar
           </p>
